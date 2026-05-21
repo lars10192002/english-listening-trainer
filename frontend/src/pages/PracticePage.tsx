@@ -2,10 +2,10 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { getAudio, getPdfContent } from '../api/audioApi';
 import { getQuestionsByAudio } from '../api/questionApi';
-import type { AudioItem, Question, PdfContent } from '../types';
+import type { AudioItem, Question, PdfContent, VocabItem } from '../types';
+import AudioPlayer from '../components/AudioPlayer';
 import DictationPractice from '../components/DictationPractice';
 import FillBlankPractice from '../components/FillBlankPractice';
-import PdfPanel from '../components/PdfPanel';
 
 type Mode = 'dictation' | 'fill_blank';
 
@@ -18,7 +18,6 @@ export default function PracticePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [pdfContent, setPdfContent] = useState<PdfContent | null>(null);
-  const [pdfOpen, setPdfOpen] = useState(true);
 
   useEffect(() => {
     if (!audioId) return;
@@ -42,9 +41,14 @@ export default function PracticePage() {
   );
 
   const hasFillBlanks = questions.some(q => q.question_type === 'fill_blank');
+  const audioSrc = `http://localhost:8000${audio.file_path}`;
+  const allVocab: VocabItem[] = pdfContent
+    ? [...pdfContent.key_vocabulary, ...pdfContent.supplementary_vocabulary]
+    : [];
 
   return (
     <div style={styles.page}>
+      {/* Top nav */}
       <div style={styles.topRow}>
         <button style={styles.backBtn} onClick={() => navigate('/library')}>← Library</button>
         <div style={styles.modeRow}>
@@ -56,26 +60,47 @@ export default function PracticePage() {
             color="#a6e3a1"
           />
         </div>
-        {pdfContent && (
-          <button
-            style={{ ...styles.backBtn, color: pdfOpen ? '#cdd6f4' : '#89b4fa', background: pdfOpen ? '#313244' : 'transparent', border: '1px dashed #45475a', marginLeft: 'auto' }}
-            onClick={() => setPdfOpen(o => !o)}
-          >
-            {pdfOpen ? 'Close PDF' : 'Study PDF'}
-          </button>
-        )}
       </div>
 
-      {pdfOpen && pdfContent && (
-        <div style={styles.pdfWrapper}>
-          <PdfPanel content={pdfContent} />
-        </div>
+      {/* 1. Play block */}
+      <section style={styles.block}>
+        <div style={styles.blockLabel}>PLAY</div>
+        <AudioPlayer src={audioSrc} />
+      </section>
+
+      {/* 2. Type block */}
+      <section style={styles.block}>
+        <div style={styles.blockLabel}>PRACTICE</div>
+        {mode === 'dictation' && <DictationPractice audio={audio} hidePlayer />}
+        {mode === 'fill_blank' && <FillBlankPractice audio={audio} questions={questions} hidePlayer />}
+      </section>
+
+      {/* 3. Dialogue block */}
+      {pdfContent && (
+        <section style={styles.block}>
+          <div style={styles.blockLabel}>DIALOGUE</div>
+          {pdfContent.title && <div style={styles.pdfTitle}>{pdfContent.title}</div>}
+          <div style={styles.dialogue}>
+            {pdfContent.dialogue || <em style={{ color: '#45475a' }}>No dialogue found</em>}
+          </div>
+        </section>
       )}
 
-      <div style={styles.content}>
-        {mode === 'dictation' && <DictationPractice audio={audio} />}
-        {mode === 'fill_blank' && <FillBlankPractice audio={audio} questions={questions} />}
-      </div>
+      {/* 4. Vocab block */}
+      {allVocab.length > 0 && (
+        <section style={styles.block}>
+          <div style={styles.blockLabel}>VOCABULARY ({allVocab.length})</div>
+          <div style={styles.vocabGrid}>
+            {allVocab.map((v, i) => (
+              <div key={i} style={styles.vocabCard}>
+                <div style={styles.vocabWord}>{v.word}</div>
+                <div style={styles.vocabPos}>{v.pos}</div>
+                <div style={styles.vocabDef}>{v.definition}</div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 }
@@ -97,17 +122,41 @@ function ModeBtn({ label, active, onClick, color }: { label: string; active: boo
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  page: { padding: 24, maxWidth: 800, margin: '0 auto' },
-  topRow: { display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20 },
+  page: { padding: 24, maxWidth: 800, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 20 },
+  topRow: { display: 'flex', alignItems: 'center', gap: 16 },
   modeRow: { display: 'flex', gap: 8 },
   backBtn: {
     background: '#313244', color: '#a6adc8', border: 'none',
     borderRadius: 6, padding: '6px 14px', cursor: 'pointer', fontSize: 13,
   },
-  content: {},
-  pdfWrapper: {
-    background: '#1e1e2e', border: '1px solid #313244', borderRadius: 10,
-    padding: '12px 16px', marginBottom: 20,
+  block: {
+    background: '#1e1e2e', border: '1px solid #313244',
+    borderRadius: 10, padding: '16px 18px',
   },
-  loading: { padding: 40, textAlign: 'center', color: '#a6adc8', display: 'flex', flexDirection: 'column', gap: 16, alignItems: 'center' },
+  blockLabel: {
+    color: '#45475a', fontSize: 10, fontWeight: 700,
+    letterSpacing: 1.5, marginBottom: 12,
+  },
+  pdfTitle: {
+    color: '#89b4fa', fontSize: 13, fontWeight: 600, marginBottom: 8,
+  },
+  dialogue: {
+    color: '#a6adc8', fontSize: 13, whiteSpace: 'pre-wrap', lineHeight: 1.8,
+    maxHeight: 320, overflowY: 'auto',
+  },
+  vocabGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+    gap: 10,
+  },
+  vocabCard: {
+    background: '#181825', borderRadius: 8, padding: '10px 12px',
+  },
+  vocabWord: { color: '#cdd6f4', fontWeight: 700, fontSize: 13, marginBottom: 2 },
+  vocabPos: { color: '#cba6f7', fontSize: 11, marginBottom: 4 },
+  vocabDef: { color: '#a6adc8', fontSize: 12, lineHeight: 1.4 },
+  loading: {
+    padding: 40, textAlign: 'center', color: '#a6adc8',
+    display: 'flex', flexDirection: 'column', gap: 16, alignItems: 'center',
+  },
 };

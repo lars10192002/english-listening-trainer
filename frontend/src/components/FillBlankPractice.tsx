@@ -7,9 +7,10 @@ import ResultPanel from './ResultPanel';
 interface Props {
   audio: AudioItem;
   questions: Question[];
+  hidePlayer?: boolean;
 }
 
-export default function FillBlankPractice({ audio, questions }: Props) {
+export default function FillBlankPractice({ audio, questions, hidePlayer = false }: Props) {
   const [answers, setAnswers] = useState<Record<number, string>>({});
   const [results, setResults] = useState<Record<number, FillBlankResult>>({});
   const [loading, setLoading] = useState<Record<number, boolean>>({});
@@ -46,9 +47,11 @@ export default function FillBlankPractice({ audio, questions }: Props) {
       </div>
       <div style={styles.title}>{audio.title || audio.filename}</div>
 
-      <div style={styles.playerWrap}>
-        <AudioPlayer src={audioSrc} />
-      </div>
+      {!hidePlayer && (
+        <div style={styles.playerWrap}>
+          <AudioPlayer src={audioSrc} />
+        </div>
+      )}
 
       <div style={styles.questionList}>
         {fillBlanks.map((q, idx) => (

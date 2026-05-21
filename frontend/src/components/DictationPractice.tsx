@@ -6,9 +6,10 @@ import ResultPanel from './ResultPanel';
 
 interface Props {
   audio: AudioItem;
+  hidePlayer?: boolean;
 }
 
-export default function DictationPractice({ audio }: Props) {
+export default function DictationPractice({ audio, hidePlayer = false }: Props) {
   const [input, setInput] = useState('');
   const [result, setResult] = useState<DictationResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -46,9 +47,11 @@ export default function DictationPractice({ audio }: Props) {
 
       <div style={styles.title}>{audio.title || audio.filename}</div>
 
-      <div style={styles.playerWrap}>
-        <AudioPlayer src={audioSrc} />
-      </div>
+      {!hidePlayer && (
+        <div style={styles.playerWrap}>
+          <AudioPlayer src={audioSrc} />
+        </div>
+      )}
 
       {!result ? (
         <>
