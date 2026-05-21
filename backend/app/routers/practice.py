@@ -1,18 +1,43 @@
 import json
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from ..database import get_db
 from ..models import AudioItem, Question, QuestionOption, PracticeRecord, Mistake, Transcript, TranscriptSegment
 from ..schemas import (
     DictationSubmit, DictationResult,
     FillBlankSubmit, FillBlankResult,
     MultipleChoiceSubmit, MultipleChoiceResult,
+    PracticeRecordResponse,
 )
 from ..services.text_compare import normalize_text
 from ..services.mistake_analyzer import analyze_mistakes, check_word_limit
 from ..services.scoring import compute_score
 
 router = APIRouter(prefix="/api/practice", tags=["practice"])
+
+
+@router.get("/records/audio/{audio_id}", response_model=List[PracticeRecordResponse])
+def get_records_by_audio(
+    audio_id: int,
+    mode: Optional[str] = None,
+    limit: int = 20,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+):
+    q = (
+        db.query(PracticeRecord)
+        .options(joinedload(PracticeRecord.mistakes), joinedload(PracticeRecord.audio_item))
+        .filter(PracticeRecord.audio_id == audio_id)
+    )
+    if mode:
+        q = q.filter(PracticeRecord.mode == mode)
+    return (
+        q.order_by(PracticeRecord.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
 
 
 def _save_record(db, audio_id, question_id, mode, user_input, correct_answer,

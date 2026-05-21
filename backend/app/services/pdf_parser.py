@@ -10,8 +10,8 @@ POS_WORDS = {
 
 FOOTER_PATTERNS = [
     re.compile(r'^Visit the Online', re.I),
-    re.compile(r'^c[?©]20\d\d\s+Praxis', re.I),
-    re.compile(r'^c 20\d\d\s+Praxis', re.I),
+    re.compile(r'^c.{0,3}20\d\d\s+Praxis', re.I),
+    re.compile(r'Praxis Language Ltd', re.I),
 ]
 
 # Normalise ligatures and common OCR artefacts
