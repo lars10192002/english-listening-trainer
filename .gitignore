@@ -15,9 +15,6 @@ backend/venv/
 frontend/node_modules/
 frontend/dist/
 
-# Uploads (audio files)
-backend/uploads/
-
 # Claude Code memory
 .claude/
 
