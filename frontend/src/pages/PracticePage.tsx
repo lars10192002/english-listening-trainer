@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getAudio } from '../api/audioApi';
+import { getAudio, getPdfContent } from '../api/audioApi';
 import { getQuestionsByAudio } from '../api/questionApi';
-import type { AudioItem, Question } from '../types';
+import type { AudioItem, Question, PdfContent } from '../types';
 import DictationPractice from '../components/DictationPractice';
 import FillBlankPractice from '../components/FillBlankPractice';
+import PdfPanel from '../components/PdfPanel';
 
 type Mode = 'dictation' | 'fill_blank';
 
@@ -16,6 +17,8 @@ export default function PracticePage() {
   const [mode, setMode] = useState<Mode>('dictation');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [pdfContent, setPdfContent] = useState<PdfContent | null>(null);
+  const [pdfOpen, setPdfOpen] = useState(true);
 
   useEffect(() => {
     if (!audioId) return;
@@ -24,6 +27,7 @@ export default function PracticePage() {
       .then(([a, qs]) => {
         setAudio(a);
         setQuestions(qs);
+        getPdfContent(id).then(pdf => setPdfContent(pdf)).catch(() => {});
       })
       .catch(() => setError('Could not load audio.'))
       .finally(() => setLoading(false));
@@ -52,7 +56,21 @@ export default function PracticePage() {
             color="#a6e3a1"
           />
         </div>
+        {pdfContent && (
+          <button
+            style={{ ...styles.backBtn, color: pdfOpen ? '#cdd6f4' : '#89b4fa', background: pdfOpen ? '#313244' : 'transparent', border: '1px dashed #45475a', marginLeft: 'auto' }}
+            onClick={() => setPdfOpen(o => !o)}
+          >
+            {pdfOpen ? 'Close PDF' : 'Study PDF'}
+          </button>
+        )}
       </div>
+
+      {pdfOpen && pdfContent && (
+        <div style={styles.pdfWrapper}>
+          <PdfPanel content={pdfContent} />
+        </div>
+      )}
 
       <div style={styles.content}>
         {mode === 'dictation' && <DictationPractice audio={audio} />}
@@ -87,5 +105,9 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 6, padding: '6px 14px', cursor: 'pointer', fontSize: 13,
   },
   content: {},
+  pdfWrapper: {
+    background: '#1e1e2e', border: '1px solid #313244', borderRadius: 10,
+    padding: '12px 16px', marginBottom: 20,
+  },
   loading: { padding: 40, textAlign: 'center', color: '#a6adc8', display: 'flex', flexDirection: 'column', gap: 16, alignItems: 'center' },
 };
