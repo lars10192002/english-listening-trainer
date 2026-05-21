@@ -1,5 +1,5 @@
 import client from './client';
-import type { AudioItem } from '../types';
+import type { AudioItem, PdfContent } from '../types';
 
 export const uploadAudio = async (formData: FormData): Promise<AudioItem> => {
   const res = await client.post('/api/audio/upload', formData, {
@@ -20,4 +20,9 @@ export const getAudio = async (id: number): Promise<AudioItem> => {
 
 export const deleteAudio = async (id: number): Promise<void> => {
   await client.delete(`/api/audio/${id}`);
+};
+
+export const getPdfContent = async (id: number): Promise<PdfContent> => {
+  const res = await client.get(`/api/audio/${id}/pdf`);
+  return res.data;
 };

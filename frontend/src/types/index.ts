@@ -121,5 +121,18 @@ export interface DashboardStats {
   exam_type_distribution: { exam_type: string; count: number }[];
 }
 
+export interface VocabItem {
+  word: string;
+  pos: string;
+  definition: string;
+}
+
+export interface PdfContent {
+  title: string;
+  dialogue: string;
+  key_vocabulary: VocabItem[];
+  supplementary_vocabulary: VocabItem[];
+}
+
 export type ExamType = 'ielts' | 'toeic' | 'custom' | 'business' | 'general';
 export type PracticeMode = 'dictation' | 'fill_blank' | 'multiple_choice' | 'number_drill' | 'paraphrase';

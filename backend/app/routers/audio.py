@@ -5,7 +5,10 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from ..database import get_db
 from ..models import AudioItem
-from ..schemas import AudioItemResponse
+from ..schemas import AudioItemResponse, PdfContentResponse
+from ..services.pdf_parser import find_pdf_for_audio, parse_pdf
+
+BASE_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 router = APIRouter(prefix="/api/audio", tags=["audio"])
 
@@ -93,6 +96,20 @@ def get_audio(audio_id: int, db: Session = Depends(get_db)):
     if not item:
         raise HTTPException(status_code=404, detail="Audio not found")
     return item
+
+
+@router.get("/{audio_id}/pdf", response_model=PdfContentResponse)
+def get_pdf_content(audio_id: int, db: Session = Depends(get_db)):
+    item = db.query(AudioItem).filter(AudioItem.id == audio_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Audio not found")
+    pdf_path = find_pdf_for_audio(item.file_path, BASE_DIR)
+    if not pdf_path:
+        raise HTTPException(status_code=404, detail="No PDF found for this audio")
+    try:
+        return parse_pdf(pdf_path)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"PDF parse error: {e}")
 
 
 @router.post("/scan", response_model=List[AudioItemResponse])

@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { listAudio, deleteAudio } from '../api/audioApi';
+import { listAudio, deleteAudio, getPdfContent } from '../api/audioApi';
 import { getTranscriptsByAudio, createTranscript, updateTranscript } from '../api/transcriptApi';
 import { getQuestionsByAudio, createQuestion, deleteQuestion } from '../api/questionApi';
-import type { AudioItem, Transcript, Question } from '../types';
+import type { AudioItem, Transcript, Question, PdfContent, VocabItem } from '../types';
 
 const EXAM_TYPES = ['', 'ielts', 'toeic', 'custom', 'business', 'general'];
 
 // englishpod_B0001dg.mp3 → episode "0001", track "dg"
-const EP_PATTERN = /^englishpod_B(\d+)(dg|pb|rv)\.mp3$/i;
+const EP_PATTERN = /^englishpod_[A-Z](\d+)(dg|pb|rv)\.mp3$/i;
 const TRACK_LABEL: Record<string, string> = { dg: 'Dialogue', pb: 'Phrasebook', rv: 'Review' };
 const TRACK_COLOR: Record<string, string> = { dg: '#89b4fa', pb: '#a6e3a1', rv: '#cba6f7' };
 
@@ -51,6 +51,8 @@ export default function LibraryPage() {
   const [addingTranscript, setAddingTranscript] = useState<number | null>(null);
   const [addingQuestion, setAddingQuestion] = useState<number | null>(null);
   const [newQuestion, setNewQuestion] = useState({ question_text: '', correct_answer: '', word_limit_type: 'none', explanation: '' });
+  const [pdfData, setPdfData] = useState<Record<number, PdfContent>>({});
+  const [pdfOpenEp, setPdfOpenEp] = useState<string | null>(null);
 
   useEffect(() => { load(); }, [filterExam]);
 
@@ -101,6 +103,17 @@ export default function LibraryPage() {
     setQuestions(prev => ({ ...prev, [audioId]: [...(prev[audioId] ?? []), q] }));
     setNewQuestion({ question_text: '', correct_answer: '', word_limit_type: 'none', explanation: '' });
     setAddingQuestion(null);
+  };
+
+  const handleStudyEp = async (ep: string, dgItem: AudioItem) => {
+    if (pdfOpenEp === ep) { setPdfOpenEp(null); return; }
+    setPdfOpenEp(ep);
+    if (!pdfData[dgItem.id]) {
+      try {
+        const data = await getPdfContent(dgItem.id);
+        setPdfData(prev => ({ ...prev, [dgItem.id]: data }));
+      } catch { /* no PDF available */ }
+    }
   };
 
   const handleDeleteQuestion = async (audioId: number, qid: number) => {
@@ -161,6 +174,17 @@ export default function LibraryPage() {
                     );
                   })}
                 </div>
+                {tracks.dg && (
+                  <button
+                    style={{ ...styles.studyBtn, background: pdfOpenEp === ep ? '#313244' : 'transparent' }}
+                    onClick={() => handleStudyEp(ep, tracks.dg!)}
+                  >
+                    {pdfOpenEp === ep ? 'Close' : 'Study PDF'}
+                  </button>
+                )}
+                {pdfOpenEp === ep && tracks.dg && pdfData[tracks.dg.id] && (
+                  <PdfPanel content={pdfData[tracks.dg.id]} />
+                )}
               </div>
             ))}
           </div>
@@ -269,6 +293,46 @@ export default function LibraryPage() {
   );
 }
 
+function PdfPanel({ content }: { content: PdfContent }) {
+  const [tab, setTab] = useState<'dialogue' | 'vocab'>('dialogue');
+  const allVocab: VocabItem[] = [...content.key_vocabulary, ...content.supplementary_vocabulary];
+  const tabBtn = (active: boolean): React.CSSProperties => ({
+    background: active ? '#89b4fa' : '#313244',
+    color: active ? '#1e1e2e' : '#cdd6f4',
+    border: 'none', borderRadius: 4, padding: '3px 10px',
+    cursor: 'pointer', fontSize: 11, fontWeight: 700,
+  });
+  return (
+    <div style={{ marginTop: 10, borderTop: '1px solid #313244', paddingTop: 10 }}>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+        <button style={tabBtn(tab === 'dialogue')} onClick={() => setTab('dialogue')}>Dialogue</button>
+        <button style={tabBtn(tab === 'vocab')} onClick={() => setTab('vocab')}>
+          Vocab ({allVocab.length})
+        </button>
+      </div>
+      {tab === 'dialogue' && (
+        <div style={{ color: '#a6adc8', fontSize: 12, whiteSpace: 'pre-wrap', maxHeight: 220, overflowY: 'auto', lineHeight: 1.6 }}>
+          {content.dialogue || <em style={{ color: '#45475a' }}>No dialogue found</em>}
+        </div>
+      )}
+      {tab === 'vocab' && (
+        <div style={{ maxHeight: 220, overflowY: 'auto' }}>
+          {allVocab.length === 0
+            ? <em style={{ color: '#45475a', fontSize: 12 }}>No vocabulary found</em>
+            : allVocab.map((v, i) => (
+              <div key={i} style={{ marginBottom: 8 }}>
+                <span style={{ color: '#cdd6f4', fontWeight: 700, fontSize: 12 }}>{v.word}</span>
+                <span style={{ color: '#cba6f7', fontSize: 11, marginLeft: 6 }}>{v.pos}</span>
+                <div style={{ color: '#a6adc8', fontSize: 11, marginTop: 2, lineHeight: 1.4 }}>{v.definition}</div>
+              </div>
+            ))
+          }
+        </div>
+      )}
+    </div>
+  );
+}
+
 function EditableTranscript({ transcript, onSave }: { transcript: Transcript; onSave: (c: string) => void }) {
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState(transcript.content);
@@ -350,6 +414,11 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 12,
   },
   missing: { color: '#45475a', fontSize: 13 },
+  studyBtn: {
+    color: '#89b4fa', border: '1px dashed #45475a',
+    borderRadius: 5, padding: '4px 0', cursor: 'pointer',
+    fontSize: 11, marginTop: 10, width: '100%',
+  },
 
   // Flat list (others)
   list: { display: 'flex', flexDirection: 'column', gap: 12 },

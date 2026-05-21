@@ -31,6 +31,21 @@ class AudioItemResponse(AudioItemBase):
     model_config = {"from_attributes": True}
 
 
+# ── PDF Content ────────────────────────────────────────────────────────────
+
+class VocabItem(BaseModel):
+    word: str
+    pos: str
+    definition: str
+
+
+class PdfContentResponse(BaseModel):
+    title: str
+    dialogue: str
+    key_vocabulary: List[VocabItem]
+    supplementary_vocabulary: List[VocabItem]
+
+
 # ── Transcript ─────────────────────────────────────────────────────────────
 
 class TranscriptCreate(BaseModel):
