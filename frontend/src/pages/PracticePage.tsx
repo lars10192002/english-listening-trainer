@@ -42,7 +42,11 @@ export default function PracticePage() {
 
   const hasFillBlanks = questions.some(q => q.question_type === 'fill_blank');
   const audioSrc = `http://localhost:8000${audio.file_path}`;
-  const allVocab: VocabItem[] = pdfContent
+
+  const epTrack = audio.filename.match(/^englishpod_[A-Z]\d+(pb|rv)\.mp3$/i)?.[1];
+  const showPdf = pdfContent && !epTrack;
+
+  const allVocab: VocabItem[] = showPdf
     ? [...pdfContent.key_vocabulary, ...pdfContent.supplementary_vocabulary]
     : [];
 
@@ -76,7 +80,7 @@ export default function PracticePage() {
       </section>
 
       {/* 3. Dialogue block */}
-      {pdfContent && (
+      {showPdf && (
         <section style={styles.block}>
           <div style={styles.blockLabel}>DIALOGUE</div>
           {pdfContent.title && <div style={styles.pdfTitle}>{pdfContent.title}</div>}
