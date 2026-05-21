@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { listAudio, deleteAudio, getPdfContent } from '../api/audioApi';
+import { listAudio, deleteAudio } from '../api/audioApi';
 import { getTranscriptsByAudio, createTranscript, updateTranscript } from '../api/transcriptApi';
 import { getQuestionsByAudio, createQuestion, deleteQuestion } from '../api/questionApi';
-import type { AudioItem, Transcript, Question, PdfContent } from '../types';
-import PdfPanel from '../components/PdfPanel';
+import type { AudioItem, Transcript, Question } from '../types';
 
 const EXAM_TYPES = ['', 'ielts', 'toeic', 'custom', 'business', 'general'];
 
@@ -52,8 +51,6 @@ export default function LibraryPage() {
   const [addingTranscript, setAddingTranscript] = useState<number | null>(null);
   const [addingQuestion, setAddingQuestion] = useState<number | null>(null);
   const [newQuestion, setNewQuestion] = useState({ question_text: '', correct_answer: '', word_limit_type: 'none', explanation: '' });
-  const [pdfData, setPdfData] = useState<Record<number, PdfContent>>({});
-  const [pdfOpenEp, setPdfOpenEp] = useState<string | null>(null);
 
   useEffect(() => { load(); }, [filterExam]);
 
@@ -104,17 +101,6 @@ export default function LibraryPage() {
     setQuestions(prev => ({ ...prev, [audioId]: [...(prev[audioId] ?? []), q] }));
     setNewQuestion({ question_text: '', correct_answer: '', word_limit_type: 'none', explanation: '' });
     setAddingQuestion(null);
-  };
-
-  const handleStudyEp = async (ep: string, dgItem: AudioItem) => {
-    if (pdfOpenEp === ep) { setPdfOpenEp(null); return; }
-    setPdfOpenEp(ep);
-    if (!pdfData[dgItem.id]) {
-      try {
-        const data = await getPdfContent(dgItem.id);
-        setPdfData(prev => ({ ...prev, [dgItem.id]: data }));
-      } catch { /* no PDF available */ }
-    }
   };
 
   const handleDeleteQuestion = async (audioId: number, qid: number) => {
@@ -175,17 +161,6 @@ export default function LibraryPage() {
                     );
                   })}
                 </div>
-                {tracks.dg && (
-                  <button
-                    style={{ ...styles.studyBtn, background: pdfOpenEp === ep ? '#313244' : 'transparent' }}
-                    onClick={() => handleStudyEp(ep, tracks.dg!)}
-                  >
-                    {pdfOpenEp === ep ? 'Close' : 'Study PDF'}
-                  </button>
-                )}
-                {pdfOpenEp === ep && tracks.dg && pdfData[tracks.dg.id] && (
-                  <PdfPanel content={pdfData[tracks.dg.id]} />
-                )}
               </div>
             ))}
           </div>
@@ -375,12 +350,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 12,
   },
   missing: { color: '#45475a', fontSize: 13 },
-  studyBtn: {
-    color: '#89b4fa', border: '1px dashed #45475a',
-    borderRadius: 5, padding: '4px 0', cursor: 'pointer',
-    fontSize: 11, marginTop: 10, width: '100%',
-  },
-
   // Flat list (others)
   list: { display: 'flex', flexDirection: 'column', gap: 12 },
   card: { background: '#1e1e2e', border: '1px solid #313244', borderRadius: 10, overflow: 'hidden' },
