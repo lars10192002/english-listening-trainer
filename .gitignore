@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.env
+backend/venv/
+**/*.db
+**/*.db-journal
+
+# Logs
+*.txt
+*.log
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# Uploads (audio files)
+backend/uploads/
+
+# Claude Code memory
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
