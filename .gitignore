@@ -21,3 +21,6 @@ frontend/dist/
 # OS
 .DS_Store
 Thumbs.db
+
+# Uploads (audio files managed separately on each machine)
+backend/uploads/
