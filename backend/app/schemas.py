@@ -27,6 +27,7 @@ class AudioItemResponse(AudioItemBase):
     file_path: str
     duration_seconds: Optional[float] = None
     created_at: Optional[datetime] = None
+    segment_count: int = 0
 
     model_config = {"from_attributes": True}
 

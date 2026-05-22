@@ -1,5 +1,6 @@
 import os
 import re
+from typing import Optional
 import fitz  # PyMuPDF
 
 POS_WORDS = {
@@ -100,7 +101,7 @@ def parse_dialogue_segments(dialogue: str) -> list[dict]:
     """
     lines = [l.strip() for l in dialogue.splitlines() if l.strip()]
     segments = []
-    current_speaker: str | None = None
+    current_speaker: Optional[str] = None
     current_lines: list[str] = []
 
     for line in lines:
@@ -128,7 +129,7 @@ def parse_dialogue_segments(dialogue: str) -> list[dict]:
     return segments
 
 
-def find_pdf_for_audio(file_path: str, base_dir: str) -> str | None:
+def find_pdf_for_audio(file_path: str, base_dir: str) -> Optional[str]:
     """Given a relative file_path like /uploads/audio/englishpod/.../file.mp3,
     return the absolute path of the PDF in the same folder, or None."""
     rel = file_path.lstrip('/')

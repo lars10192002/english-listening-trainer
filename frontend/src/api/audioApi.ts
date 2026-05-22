@@ -26,3 +26,8 @@ export const getPdfContent = async (id: number): Promise<PdfContent> => {
   const res = await client.get(`/api/audio/${id}/pdf`);
   return res.data;
 };
+
+export const scanAudio = async (): Promise<AudioItem[]> => {
+  const res = await client.post('/api/audio/scan');
+  return res.data;
+};

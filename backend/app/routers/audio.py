@@ -2,13 +2,31 @@ import os
 import shutil
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from typing import List, Optional
 from ..database import get_db
-from ..models import AudioItem
+from ..models import AudioItem, TranscriptSegment
 from ..schemas import AudioItemResponse, PdfContentResponse
 from ..services.pdf_parser import find_pdf_for_audio, parse_pdf
 
 BASE_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
+
+
+def _with_segment_count(items: list, db: Session) -> list:
+    if not items:
+        return []
+    counts = dict(
+        db.query(TranscriptSegment.audio_id, func.count(TranscriptSegment.id))
+        .filter(TranscriptSegment.audio_id.in_([i.id for i in items]))
+        .group_by(TranscriptSegment.audio_id)
+        .all()
+    )
+    result = []
+    for item in items:
+        r = AudioItemResponse.model_validate(item)
+        r.segment_count = counts.get(item.id, 0)
+        result.append(r)
+    return result
 
 router = APIRouter(prefix="/api/audio", tags=["audio"])
 
@@ -87,7 +105,7 @@ def list_audio(
         q = q.filter(AudioItem.difficulty == difficulty)
     if topic:
         q = q.filter(AudioItem.topic == topic)
-    return q.order_by(AudioItem.created_at.desc()).all()
+    return _with_segment_count(q.order_by(AudioItem.created_at.desc()).all(), db)
 
 
 @router.get("/{audio_id}", response_model=AudioItemResponse)
@@ -95,7 +113,7 @@ def get_audio(audio_id: int, db: Session = Depends(get_db)):
     item = db.query(AudioItem).filter(AudioItem.id == audio_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Audio not found")
-    return item
+    return _with_segment_count([item], db)[0]
 
 
 @router.get("/{audio_id}/pdf", response_model=PdfContentResponse)
@@ -114,18 +132,13 @@ def get_pdf_content(audio_id: int, db: Session = Depends(get_db)):
 
 @router.post("/scan", response_model=List[AudioItemResponse])
 def scan_folder(db: Session = Depends(get_db)):
-    """Register any audio files in uploads/audio/ (recursively) that aren't yet in the database."""
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
-
-    # Fix any existing records that have the wrong path prefix (/audio/... → /uploads/audio/...)
-    for item in db.query(AudioItem).all():
-        if item.file_path and item.file_path.startswith("/audio/"):
-            item.file_path = "/uploads" + item.file_path
-    db.commit()
+    """Register any audio files in uploads/ (recursively) that aren't yet in the database."""
+    uploads_root = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", "uploads"))
+    os.makedirs(uploads_root, exist_ok=True)
 
     existing_paths = {row.file_path for row in db.query(AudioItem.file_path).all()}
     added = []
-    for dirpath, _dirnames, filenames in os.walk(UPLOAD_DIR):
+    for dirpath, _dirnames, filenames in os.walk(uploads_root):
         for fname in filenames:
             if fname.startswith("."):
                 continue
@@ -133,8 +146,8 @@ def scan_folder(db: Session = Depends(get_db)):
             if ext not in ALLOWED_EXTENSIONS:
                 continue
             full_path = os.path.join(dirpath, fname)
-            rel = os.path.relpath(full_path, UPLOAD_DIR).replace("\\", "/")
-            relative_path = f"/uploads/audio/{rel}"
+            rel = os.path.relpath(full_path, uploads_root).replace("\\", "/")
+            relative_path = f"/uploads/{rel}"
             if relative_path in existing_paths:
                 continue
             base = os.path.splitext(fname)[0]
@@ -149,7 +162,7 @@ def scan_folder(db: Session = Depends(get_db)):
     db.commit()
     for item in added:
         db.refresh(item)
-    return added
+    return _with_segment_count(added, db)
 
 
 @router.delete("/{audio_id}")

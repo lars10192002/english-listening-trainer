@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { listAudio, deleteAudio } from '../api/audioApi';
+import { listAudio, deleteAudio, scanAudio } from '../api/audioApi';
 import { getTranscriptsByAudio, createTranscript, updateTranscript, importPdfTranscript } from '../api/transcriptApi';
 import { getQuestionsByAudio, createQuestion, deleteQuestion } from '../api/questionApi';
 import type { AudioItem, Transcript, Question } from '../types';
@@ -47,6 +47,8 @@ export default function LibraryPage() {
   const [expanded, setExpanded] = useState<number | null>(null);
   const [transcripts, setTranscripts] = useState<Record<number, Transcript[]>>({});
   const [questions, setQuestions] = useState<Record<number, Question[]>>({});
+  const [scanning, setScanning] = useState(false);
+  const [scanResult, setScanResult] = useState<string | null>(null);
   const [importStatus, setImportStatus] = useState<Record<number, { loading: boolean; segmentCount?: number; speakers?: string[]; error?: string }>>({});
   const [newTranscript, setNewTranscript] = useState('');
   const [addingTranscript, setAddingTranscript] = useState<number | null>(null);
@@ -59,6 +61,13 @@ export default function LibraryPage() {
     const params = filterExam ? { exam_type: filterExam } : undefined;
     const data = await listAudio(params);
     setItems(data);
+    const preloaded: Record<number, { loading: boolean; segmentCount?: number }> = {};
+    for (const item of data) {
+      if (item.segment_count > 0) {
+        preloaded[item.id] = { loading: false, segmentCount: item.segment_count };
+      }
+    }
+    setImportStatus(prev => ({ ...prev, ...preloaded }));
   };
 
   const expand = async (id: number) => {
@@ -71,6 +80,20 @@ export default function LibraryPage() {
     if (!questions[id]) {
       const qs = await getQuestionsByAudio(id);
       setQuestions(prev => ({ ...prev, [id]: qs }));
+    }
+  };
+
+  const handleScan = async () => {
+    setScanning(true);
+    setScanResult(null);
+    try {
+      const added = await scanAudio();
+      setScanResult(added.length > 0 ? `Found ${added.length} new file(s).` : 'No new files found.');
+      await load();
+    } catch {
+      setScanResult('Scan failed.');
+    } finally {
+      setScanning(false);
     }
   };
 
@@ -136,6 +159,10 @@ export default function LibraryPage() {
         <select style={styles.select} value={filterExam} onChange={e => setFilterExam(e.target.value)}>
           {EXAM_TYPES.map(t => <option key={t} value={t}>{t ? t.toUpperCase() : 'All Types'}</option>)}
         </select>
+        <button style={styles.scanBtn} onClick={handleScan} disabled={scanning}>
+          {scanning ? 'Scanning…' : 'Scan Folder'}
+        </button>
+        {scanResult && <span style={styles.scanResult}>{scanResult}</span>}
       </div>
 
       {items.length === 0 && (
@@ -336,6 +363,11 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 6, padding: '6px 10px', fontSize: 13,
   },
   empty: { color: '#6c7086', padding: 20 },
+  scanBtn: {
+    background: '#313244', color: '#cdd6f4', border: '1px solid #45475a',
+    borderRadius: 6, padding: '6px 14px', cursor: 'pointer', fontSize: 13,
+  },
+  scanResult: { color: '#a6e3a1', fontSize: 13 },
   section: { marginBottom: 28 },
   sectionHeader: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 },
   sectionLabel: { color: '#cdd6f4', fontSize: 16, fontWeight: 700 },

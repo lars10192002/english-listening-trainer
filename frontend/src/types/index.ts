@@ -12,6 +12,7 @@ export interface AudioItem {
   speaker_accent?: string;
   duration_seconds?: number;
   created_at?: string;
+  segment_count: number;
 }
 
 export interface Transcript {

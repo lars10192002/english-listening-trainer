@@ -10,6 +10,7 @@ backend/venv/
 # Logs
 *.txt
 *.log
+!backend/requirements.txt
 
 # Node
 frontend/node_modules/
