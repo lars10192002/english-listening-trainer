@@ -109,7 +109,7 @@ export default function RolePlayPractice({ audio, segments }: Props) {
 
           return (
             <div key={seg.id} style={{ ...styles.line, ...(isMyLine ? styles.myLine : {}) }}>
-              <span style={{ ...styles.speaker, color: isMyLine ? '#89b4fa' : '#585b70' }}>
+              <span style={{ ...styles.speaker, color: isMyLine ? '#89b4fa' : '#6c7086' }}>
                 {seg.speaker}
               </span>
 
@@ -211,7 +211,7 @@ const styles: Record<string, React.CSSProperties> = {
     border: '1px solid #313244',
   },
   speaker: { fontWeight: 700, fontSize: 13, minWidth: 20, flexShrink: 0, paddingTop: 6 },
-  contextText: { color: '#585b70', fontSize: 13, lineHeight: 1.6, flex: 1 },
+  contextText: { color: '#a6adc8', fontSize: 13, lineHeight: 1.6, flex: 1 },
   inputWrapper: { flex: 1 },
   inputRow: { display: 'flex', gap: 6, alignItems: 'flex-start' },
   textarea: {
