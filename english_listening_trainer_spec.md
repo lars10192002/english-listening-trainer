@@ -572,7 +572,50 @@ suitable for = designed for
 
 ---
 
-## 7.5 模式五：TOEIC Multiple Choice Mode
+## 7.5 模式五：Role Play Mode
+
+### 目的
+
+針對對話型音檔（如 EnglishPod Dialogue track），讓使用者扮演某個角色（A 或 B），填入自己角色的台詞，其他角色的台詞顯示為參考文字。
+
+### 前置條件
+
+- 音檔必須已透過「Import PDF」匯入對話 segments
+- Segments 需有 `speaker` 欄位
+
+### 使用流程
+
+1. 使用者進入 PracticePage，點選 Role Play 模式
+2. 系統顯示角色選擇畫面（A / B / C…）
+3. 使用者選擇要扮演的角色
+4. 系統顯示完整對話：
+   - 自己的角色：顯示輸入框
+   - 對方的角色：顯示原文作為參考
+5. 使用者填入自己角色的所有台詞
+6. 點擊 Submit，系統逐行評分
+7. 每行顯示分數、正確答案、錯誤分析
+8. 可針對單行點擊 ↺ 重新評分，不需重新提交全部
+9. 可點擊 Re-submit All 重新提交全部
+
+### UI 元素
+
+```txt
+Playing as: [A]                              Total: 87.5%  [Switch Role]
+
+A:  [_____________________________________ ]  ↺
+    ✓ 92%  Correct: Good evening. My name is Fabio...
+
+B:  No, I'm still working on it.
+
+A:  [_____________________________________ ]  ↺
+    ✗ 75%  Correct: For you sir, I would recommend...
+
+[Re-submit All]  [Clear]
+```
+
+---
+
+## 7.6 模式六：TOEIC Multiple Choice Mode
 
 ### 目的
 
@@ -676,6 +719,7 @@ CREATE TABLE transcript_segments (
   transcript_id INTEGER NOT NULL,
   audio_id INTEGER NOT NULL,
   segment_index INTEGER NOT NULL,
+  speaker TEXT,
   start_time_seconds REAL,
   end_time_seconds REAL,
   text TEXT NOT NULL,
@@ -685,13 +729,16 @@ CREATE TABLE transcript_segments (
 );
 ```
 
+`speaker` 欄位用於對話型音檔（如 EnglishPod），記錄每個 segment 是哪個角色說的（A、B、C…）。
+
 用途：
 
 1. 逐句聽寫
 2. A-B repeat
 3. SRT / VTT 字幕時間軸
 4. 只重播錯誤句子
-5. 未來自動切句
+5. Role Play 角色扮演練習
+6. 未來自動切句
 
 MVP 可以先把整份 transcript 當成一個 segment。
 
@@ -808,6 +855,7 @@ fill_blank
 number_drill
 paraphrase
 multiple_choice
+role_play
 ```
 
 ---
@@ -952,6 +1000,53 @@ GET /api/transcripts/audio/{audio_id}
 
 ---
 
+### Import PDF transcript (EnglishPod)
+
+```http
+POST /api/transcripts/import-pdf/{audio_id}
+```
+
+自動從音檔同資料夾尋找對應 PDF（例如 `englishpod_B0001dg.mp3` → `englishpod_B0001.pdf`），解析對話段落並儲存為 transcript + segments。
+
+Response:
+
+```json
+{
+  "transcript_id": 12,
+  "audio_id": 5,
+  "segment_count": 10,
+  "speakers": ["A", "B"],
+  "segments": [...]
+}
+```
+
+---
+
+### Get segments by audio id
+
+```http
+GET /api/transcripts/audio/{audio_id}/segments
+```
+
+Response:
+
+```json
+[
+  {
+    "id": 80,
+    "transcript_id": 12,
+    "audio_id": 5,
+    "segment_index": 0,
+    "speaker": "A",
+    "start_time_seconds": null,
+    "end_time_seconds": null,
+    "text": "Good evening. My name is Fabio, I'll be your waiter for tonight."
+  }
+]
+```
+
+---
+
 ### Create transcript segment
 
 ```http
@@ -1078,6 +1173,48 @@ Response:
       "wrong_text": "service",
       "correct_text": "services",
       "explanation": "The correct answer requires the plural form."
+    }
+  ]
+}
+```
+
+---
+
+### Submit role play answers
+
+```http
+POST /api/practice/role-play/submit
+```
+
+Request:
+
+```json
+{
+  "audio_id": 5,
+  "role": "A",
+  "answers": [
+    { "segment_id": 80, "user_input": "Good evening. My name is Fabio." },
+    { "segment_id": 82, "user_input": "I would recommend the spaghetti." }
+  ]
+}
+```
+
+Response:
+
+```json
+{
+  "total_score": 85.0,
+  "role": "A",
+  "results": [
+    {
+      "segment_id": 80,
+      "segment_index": 0,
+      "score": 90.0,
+      "word_error_rate": 0.10,
+      "correct_answer": "Good evening. My name is Fabio, I'll be your waiter for tonight.",
+      "user_input": "Good evening. My name is Fabio.",
+      "mistakes": [],
+      "practice_record_id": 26
     }
   ]
 }
@@ -1324,13 +1461,33 @@ Speaker Accent: American / British / Australian / Unknown
 
 用途：主要練習頁。
 
-UI：
+目前實作的版面（Block Layout）：
 
 ```txt
-左側：音檔清單 / 題目清單
-右側：播放器 + 練習區
-下方：結果分析
+[← Library]  [Dictation] [Fill-in-the-Blank] [Role Play]  ← Mode 選擇
+
+┌─────────────────────────────────┐
+│ PLAY                            │
+│  [播放器]                        │
+└─────────────────────────────────┘
+
+┌─────────────────────────────────┐
+│ PRACTICE                        │
+│  根據 Mode 顯示對應練習元件       │
+└─────────────────────────────────┘
+
+┌─────────────────────────────────┐  ← 只有 dg track 且有 PDF 才顯示
+│ DIALOGUE                        │
+│  PDF 對話原文                    │
+└─────────────────────────────────┘
+
+┌─────────────────────────────────┐  ← 只有有 vocab 才顯示
+│ VOCABULARY (N)                  │
+│  單字卡片 Grid                   │
+└─────────────────────────────────┘
 ```
+
+Role Play 按鈕只在音檔有 segments（已 Import PDF）時才顯示。
 
 ---
 
@@ -1476,7 +1633,55 @@ interface AudioPlayerProps {
 
 ---
 
-## 15. 開發注意事項
+## 15. EnglishPod 音檔結構
+
+### 音檔命名規則
+
+EnglishPod 音檔統一放在：
+
+```txt
+backend/uploads/audio/englishpod/{batch}/{episode}/
+```
+
+範例：
+
+```txt
+backend/uploads/audio/englishpod/1-30/0001/
+  englishpod_B0001dg.mp3   ← Dialogue（主對話）
+  englishpod_B0001pb.mp3   ← Phrasebook（片語解說）
+  englishpod_B0001rv.mp3   ← Review（複習）
+  englishpod_B0001.pdf     ← 對應的 PDF 教材
+```
+
+### Track 類型
+
+| 後綴 | 說明 | Import PDF | Dialogue/Vocab 區塊 | Role Play |
+|------|------|-----------|---------------------|-----------|
+| `dg` | Dialogue，主對話 | ✓ | ✓ | ✓（有 segments 後）|
+| `pb` | Phrasebook，片語 | ✗ | ✗ | ✗ |
+| `rv` | Review，複習 | ✗ | ✗ | ✗ |
+
+### PDF 解析邏輯
+
+- 使用 PyMuPDF 讀取 PDF
+- 只擷取 "Elementary" 區塊的對話
+- 角色標籤格式：`A:` 或 `B:` 獨立一行
+- 處理 PDF 常見問題：
+  - Unicode 連字符（fi / fl / ff 等）
+  - 花體引號（`'` `'` `"` `"`）→ 標準 ASCII
+  - 連字符換行（`compli-\nmentary` → `complimentary`）
+
+### PDF 尋找規則
+
+`find_pdf_for_audio()` 依音檔路徑自動尋找同資料夾的 PDF：
+
+```txt
+englishpod_B0001dg.mp3 → englishpod_B0001.pdf（同資料夾）
+```
+
+---
+
+## 16. 開發注意事項
 
 1. 第一版優先能用，不追求華麗 UI。
 2. 音檔先存在本地 `backend/uploads/audio/`。
@@ -1491,7 +1696,7 @@ interface AudioPlayerProps {
 
 ---
 
-## 16. MVP 完成標準
+## 17. MVP 完成標準
 
 完成後，使用者應該可以：
 
@@ -1511,7 +1716,7 @@ interface AudioPlayerProps {
 
 ---
 
-## 17. README 啟動指令建議
+## 18. README 啟動指令建議
 
 ### Backend
 
@@ -1540,7 +1745,7 @@ Backend: http://localhost:8000
 
 ---
 
-## 18. 給 Claude Code 的施工指令
+## 19. 給 Claude Code 的施工指令
 
 請你依照本規格建立一個本地端 English Listening Trainer。
 
@@ -1577,7 +1782,7 @@ english-listening-trainer
 
 ---
 
-## 19. 最終系統方向
+## 20. 最終系統方向
 
 這個系統的長期方向不是單一 IELTS 工具，而是：
 
