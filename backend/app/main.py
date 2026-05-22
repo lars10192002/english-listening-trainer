@@ -2,11 +2,20 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
 from .database import engine
 from . import models
 from .routers import audio, transcripts, questions, practice, review, stats
 
 models.Base.metadata.create_all(bind=engine)
+
+# Add speaker column if it doesn't exist (migration)
+with engine.connect() as _conn:
+    try:
+        _conn.execute(text("ALTER TABLE transcript_segments ADD COLUMN speaker TEXT"))
+        _conn.commit()
+    except Exception:
+        pass
 
 app = FastAPI(title="English Listening Trainer API", version="1.0.0")
 

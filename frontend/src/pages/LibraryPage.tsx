@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { listAudio, deleteAudio } from '../api/audioApi';
-import { getTranscriptsByAudio, createTranscript, updateTranscript } from '../api/transcriptApi';
+import { getTranscriptsByAudio, createTranscript, updateTranscript, importPdfTranscript } from '../api/transcriptApi';
 import { getQuestionsByAudio, createQuestion, deleteQuestion } from '../api/questionApi';
 import type { AudioItem, Transcript, Question } from '../types';
 
@@ -47,6 +47,7 @@ export default function LibraryPage() {
   const [expanded, setExpanded] = useState<number | null>(null);
   const [transcripts, setTranscripts] = useState<Record<number, Transcript[]>>({});
   const [questions, setQuestions] = useState<Record<number, Question[]>>({});
+  const [importStatus, setImportStatus] = useState<Record<number, { loading: boolean; segmentCount?: number; speakers?: string[]; error?: string }>>({});
   const [newTranscript, setNewTranscript] = useState('');
   const [addingTranscript, setAddingTranscript] = useState<number | null>(null);
   const [addingQuestion, setAddingQuestion] = useState<number | null>(null);
@@ -103,6 +104,19 @@ export default function LibraryPage() {
     setAddingQuestion(null);
   };
 
+  const handleImportPdf = async (audioId: number) => {
+    setImportStatus(prev => ({ ...prev, [audioId]: { loading: true } }));
+    try {
+      const result = await importPdfTranscript(audioId);
+      setImportStatus(prev => ({
+        ...prev,
+        [audioId]: { loading: false, segmentCount: result.segment_count, speakers: result.speakers },
+      }));
+    } catch {
+      setImportStatus(prev => ({ ...prev, [audioId]: { loading: false, error: 'Import failed' } }));
+    }
+  };
+
   const handleDeleteQuestion = async (audioId: number, qid: number) => {
     await deleteQuestion(qid);
     setQuestions(prev => ({ ...prev, [audioId]: prev[audioId].filter(q => q.id !== qid) }));
@@ -142,18 +156,33 @@ export default function LibraryPage() {
                 <div style={styles.trackList}>
                   {(['dg', 'pb', 'rv'] as const).map(t => {
                     const item = tracks[t];
+                    const imp = item ? importStatus[item.id] : undefined;
                     return (
                       <div key={t} style={styles.trackRow}>
                         <span style={{ ...styles.trackBadge, background: TRACK_COLOR[t], color: '#1e1e2e' }}>
                           {TRACK_LABEL[t]}
                         </span>
                         {item ? (
-                          <button
-                            style={styles.practiceBtn}
-                            onClick={() => navigate(`/practice/${item.id}`)}
-                          >
-                            Practice
-                          </button>
+                          <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                            <button style={styles.practiceBtn} onClick={() => navigate(`/practice/${item.id}`)}>
+                              Practice
+                            </button>
+                            {t === 'dg' && (
+                              imp?.segmentCount != null ? (
+                                <span style={styles.importedBadge}>
+                                  ✓ {imp.segmentCount} lines
+                                </span>
+                              ) : (
+                                <button
+                                  style={styles.importBtn}
+                                  disabled={imp?.loading}
+                                  onClick={() => handleImportPdf(item.id)}
+                                >
+                                  {imp?.loading ? '…' : imp?.error ? 'Retry' : 'Import PDF'}
+                                </button>
+                              )
+                            )}
+                          </div>
                         ) : (
                           <span style={styles.missing}>—</span>
                         )}
@@ -350,6 +379,13 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 12,
   },
   missing: { color: '#45475a', fontSize: 13 },
+  importBtn: {
+    background: 'transparent', color: '#f9e2af', border: '1px solid #45475a',
+    borderRadius: 4, padding: '2px 7px', cursor: 'pointer', fontSize: 11,
+  },
+  importedBadge: {
+    color: '#a6e3a1', fontSize: 11, fontWeight: 600,
+  },
   // Flat list (others)
   list: { display: 'flex', flexDirection: 'column', gap: 12 },
   card: { background: '#1e1e2e', border: '1px solid #313244', borderRadius: 10, overflow: 'hidden' },

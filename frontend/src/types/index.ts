@@ -28,9 +28,18 @@ export interface TranscriptSegment {
   transcript_id: number;
   audio_id: number;
   segment_index: number;
+  speaker?: string;
   start_time_seconds?: number;
   end_time_seconds?: number;
   text: string;
+}
+
+export interface TranscriptImportResult {
+  transcript_id: number;
+  audio_id: number;
+  segment_count: number;
+  speakers: string[];
+  segments: TranscriptSegment[];
 }
 
 export interface QuestionOption {

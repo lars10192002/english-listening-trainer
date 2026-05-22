@@ -69,6 +69,7 @@ class TranscriptResponse(BaseModel):
 class TranscriptSegmentCreate(BaseModel):
     audio_id: int
     segment_index: int
+    speaker: Optional[str] = None
     start_time_seconds: Optional[float] = None
     end_time_seconds: Optional[float] = None
     text: str
@@ -79,11 +80,20 @@ class TranscriptSegmentResponse(BaseModel):
     transcript_id: int
     audio_id: int
     segment_index: int
+    speaker: Optional[str] = None
     start_time_seconds: Optional[float] = None
     end_time_seconds: Optional[float] = None
     text: str
 
     model_config = {"from_attributes": True}
+
+
+class TranscriptImportResponse(BaseModel):
+    transcript_id: int
+    audio_id: int
+    segment_count: int
+    speakers: List[str]
+    segments: List[TranscriptSegmentResponse]
 
 
 # ── Question ───────────────────────────────────────────────────────────────

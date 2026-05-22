@@ -49,6 +49,7 @@ class TranscriptSegment(Base):
     transcript_id = Column(Integer, ForeignKey("transcripts.id"), nullable=False)
     audio_id = Column(Integer, ForeignKey("audio_items.id"), nullable=False)
     segment_index = Column(Integer, nullable=False)
+    speaker = Column(Text)
     start_time_seconds = Column(Float)
     end_time_seconds = Column(Float)
     text = Column(Text, nullable=False)

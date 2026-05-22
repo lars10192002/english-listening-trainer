@@ -1,5 +1,5 @@
 import client from './client';
-import type { Transcript } from '../types';
+import type { Transcript, TranscriptImportResult } from '../types';
 
 export const createTranscript = async (data: {
   audio_id: number;
@@ -22,4 +22,9 @@ export const updateTranscript = async (id: number, data: Partial<Transcript>): P
 
 export const deleteTranscript = async (id: number): Promise<void> => {
   await client.delete(`/api/transcripts/${id}`);
+};
+
+export const importPdfTranscript = async (audioId: number): Promise<TranscriptImportResult> => {
+  const res = await client.post(`/api/transcripts/import-pdf/${audioId}`);
+  return res.data;
 };

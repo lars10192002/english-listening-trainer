@@ -15,7 +15,7 @@ FOOTER_PATTERNS = [
 ]
 
 # Normalise ligatures and common OCR artefacts
-_LIGATURES = str.maketrans({'ﬁ': 'fi', 'ﬂ': 'fl', 'ﬀ': 'ff', 'ﬃ': 'ffi', 'ﬄ': 'ffl', '©': '©'})
+_LIGATURES = str.maketrans({'ﬁ': 'fi', 'ﬂ': 'fl', 'ﬀ': 'ff', 'ﬃ': 'ffi', 'ﬄ': 'ffl', '©': '©', '’': "'", '‘': "'", '“': '"', '”': '"'})
 
 
 def _clean(text: str) -> str:
@@ -76,6 +76,56 @@ def parse_pdf(pdf_path: str) -> dict:
         'key_vocabulary': key_vocab,
         'supplementary_vocabulary': supp_vocab,
     }
+
+
+_SPEAKER_LINE = re.compile(r'^([A-Z]):$')
+
+
+def _join_lines(lines: list[str]) -> str:
+    """Join lines, merging hyphenated line-breaks (PDF layout artefact)."""
+    result = ''
+    for line in lines:
+        if result.endswith('-'):
+            result = result[:-1] + line
+        elif result:
+            result += ' ' + line
+        else:
+            result = line
+    return result
+
+
+def parse_dialogue_segments(dialogue: str) -> list[dict]:
+    """Split dialogue text into per-speaker segments.
+    Returns list of {speaker, text, segment_index}.
+    """
+    lines = [l.strip() for l in dialogue.splitlines() if l.strip()]
+    segments = []
+    current_speaker: str | None = None
+    current_lines: list[str] = []
+
+    for line in lines:
+        m = _SPEAKER_LINE.match(line)
+        if m:
+            if current_speaker is not None and current_lines:
+                segments.append({
+                    'speaker': current_speaker,
+                    'text': _join_lines(current_lines),
+                    'segment_index': len(segments),
+                })
+            current_speaker = m.group(1)
+            current_lines = []
+        else:
+            if current_speaker is not None:
+                current_lines.append(line)
+
+    if current_speaker is not None and current_lines:
+        segments.append({
+            'speaker': current_speaker,
+            'text': _join_lines(current_lines),
+            'segment_index': len(segments),
+        })
+
+    return segments
 
 
 def find_pdf_for_audio(file_path: str, base_dir: str) -> str | None:
