@@ -1,5 +1,5 @@
 import client from './client';
-import type { DictationResult, FillBlankResult, MultipleChoiceResult, PracticeRecord, DashboardStats } from '../types';
+import type { DictationResult, FillBlankResult, MultipleChoiceResult, RolePlayResult, PracticeRecord, DashboardStats } from '../types';
 
 export const submitDictation = async (data: {
   audio_id: number;
@@ -23,6 +23,15 @@ export const submitMultipleChoice = async (data: {
   selected_option_id: number;
 }): Promise<MultipleChoiceResult> => {
   const res = await client.post('/api/practice/multiple-choice/submit', data);
+  return res.data;
+};
+
+export const submitRolePlay = async (data: {
+  audio_id: number;
+  role: string;
+  answers: { segment_id: number; user_input: string }[];
+}): Promise<RolePlayResult> => {
+  const res = await client.post('/api/practice/role-play/submit', data);
   return res.data;
 };
 

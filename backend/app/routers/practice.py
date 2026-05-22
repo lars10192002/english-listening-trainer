@@ -8,6 +8,7 @@ from ..schemas import (
     DictationSubmit, DictationResult,
     FillBlankSubmit, FillBlankResult,
     MultipleChoiceSubmit, MultipleChoiceResult,
+    RolePlaySubmit, RolePlayResult, RolePlayLineResult,
     PracticeRecordResponse,
 )
 from ..services.text_compare import normalize_text
@@ -138,6 +139,38 @@ def submit_fill_blank(data: FillBlankSubmit, db: Session = Depends(get_db)):
         mistakes=mistakes_data,
         practice_record_id=record.id,
     )
+
+
+@router.post("/role-play/submit", response_model=RolePlayResult)
+def submit_role_play(data: RolePlaySubmit, db: Session = Depends(get_db)):
+    audio = db.query(AudioItem).filter(AudioItem.id == data.audio_id).first()
+    if not audio:
+        raise HTTPException(status_code=404, detail="Audio not found")
+
+    line_results = []
+    for answer in data.answers:
+        seg = db.query(TranscriptSegment).filter(TranscriptSegment.id == answer.segment_id).first()
+        if not seg:
+            continue
+        score_data = compute_score(seg.text, answer.user_input)
+        mistakes_data = analyze_mistakes(seg.text, answer.user_input)
+        record = _save_record(
+            db, data.audio_id, None, "role_play",
+            answer.user_input, seg.text, score_data, mistakes_data,
+        )
+        line_results.append(RolePlayLineResult(
+            segment_id=seg.id,
+            segment_index=seg.segment_index,
+            score=score_data["score"],
+            word_error_rate=score_data["wer"],
+            correct_answer=seg.text,
+            user_input=answer.user_input,
+            mistakes=mistakes_data,
+            practice_record_id=record.id,
+        ))
+
+    total_score = round(sum(r.score for r in line_results) / len(line_results), 1) if line_results else 0.0
+    return RolePlayResult(total_score=total_score, role=data.role, results=line_results)
 
 
 @router.post("/multiple-choice/submit", response_model=MultipleChoiceResult)

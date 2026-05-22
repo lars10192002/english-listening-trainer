@@ -33,6 +33,16 @@ def get_transcripts_by_audio(audio_id: int, db: Session = Depends(get_db)):
     return db.query(Transcript).filter(Transcript.audio_id == audio_id).all()
 
 
+@router.get("/audio/{audio_id}/segments", response_model=List[TranscriptSegmentResponse])
+def get_segments_by_audio(audio_id: int, db: Session = Depends(get_db)):
+    return (
+        db.query(TranscriptSegment)
+        .filter(TranscriptSegment.audio_id == audio_id)
+        .order_by(TranscriptSegment.segment_index)
+        .all()
+    )
+
+
 @router.get("/{transcript_id}", response_model=TranscriptResponse)
 def get_transcript(transcript_id: int, db: Session = Depends(get_db)):
     t = db.query(Transcript).filter(Transcript.id == transcript_id).first()

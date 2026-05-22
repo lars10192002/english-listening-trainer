@@ -2,12 +2,14 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { getAudio, getPdfContent } from '../api/audioApi';
 import { getQuestionsByAudio } from '../api/questionApi';
-import type { AudioItem, Question, PdfContent, VocabItem } from '../types';
+import { getSegmentsByAudio } from '../api/transcriptApi';
+import type { AudioItem, Question, PdfContent, VocabItem, TranscriptSegment } from '../types';
 import AudioPlayer from '../components/AudioPlayer';
 import DictationPractice from '../components/DictationPractice';
 import FillBlankPractice from '../components/FillBlankPractice';
+import RolePlayPractice from '../components/RolePlayPractice';
 
-type Mode = 'dictation' | 'fill_blank';
+type Mode = 'dictation' | 'fill_blank' | 'role_play';
 
 export default function PracticePage() {
   const { audioId } = useParams<{ audioId: string }>();
@@ -18,6 +20,7 @@ export default function PracticePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [pdfContent, setPdfContent] = useState<PdfContent | null>(null);
+  const [segments, setSegments] = useState<TranscriptSegment[]>([]);
 
   useEffect(() => {
     if (!audioId) return;
@@ -27,6 +30,7 @@ export default function PracticePage() {
         setAudio(a);
         setQuestions(qs);
         getPdfContent(id).then(pdf => setPdfContent(pdf)).catch(() => {});
+        getSegmentsByAudio(id).then(segs => setSegments(segs)).catch(() => {});
       })
       .catch(() => setError('Could not load audio.'))
       .finally(() => setLoading(false));
@@ -45,6 +49,7 @@ export default function PracticePage() {
 
   const epTrack = audio.filename.match(/^englishpod_[A-Z]\d+(pb|rv)\.mp3$/i)?.[1];
   const showPdf = pdfContent && !epTrack;
+  const hasSegments = segments.length > 0;
 
   const allVocab: VocabItem[] = showPdf
     ? [...pdfContent.key_vocabulary, ...pdfContent.supplementary_vocabulary]
@@ -63,6 +68,9 @@ export default function PracticePage() {
             onClick={() => setMode('fill_blank')}
             color="#a6e3a1"
           />
+          {hasSegments && (
+            <ModeBtn label="Role Play" active={mode === 'role_play'} onClick={() => setMode('role_play')} color="#cba6f7" />
+          )}
         </div>
       </div>
 
@@ -77,6 +85,7 @@ export default function PracticePage() {
         <div style={styles.blockLabel}>PRACTICE</div>
         {mode === 'dictation' && <DictationPractice audio={audio} hidePlayer />}
         {mode === 'fill_blank' && <FillBlankPractice audio={audio} questions={questions} hidePlayer />}
+        {mode === 'role_play' && <RolePlayPractice audio={audio} segments={segments} />}
       </section>
 
       {/* 3. Dialogue block */}

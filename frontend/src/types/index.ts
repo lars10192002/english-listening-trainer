@@ -143,5 +143,22 @@ export interface PdfContent {
   supplementary_vocabulary: VocabItem[];
 }
 
+export interface RolePlayLineResult {
+  segment_id: number;
+  segment_index: number;
+  score: number;
+  word_error_rate: number;
+  correct_answer: string;
+  user_input: string;
+  mistakes: MistakeDetail[];
+  practice_record_id: number;
+}
+
+export interface RolePlayResult {
+  total_score: number;
+  role: string;
+  results: RolePlayLineResult[];
+}
+
 export type ExamType = 'ielts' | 'toeic' | 'custom' | 'business' | 'general';
 export type PracticeMode = 'dictation' | 'fill_blank' | 'multiple_choice' | 'number_drill' | 'paraphrase';

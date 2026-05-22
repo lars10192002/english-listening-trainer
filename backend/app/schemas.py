@@ -231,3 +231,33 @@ class DashboardStats(BaseModel):
     pending_review_count: int
     recent_mistake_types: List[dict]
     exam_type_distribution: List[dict]
+
+
+# ── Role Play ──────────────────────────────────────────────────────────────
+
+class RolePlayAnswer(BaseModel):
+    segment_id: int
+    user_input: str
+
+
+class RolePlaySubmit(BaseModel):
+    audio_id: int
+    role: str
+    answers: List[RolePlayAnswer]
+
+
+class RolePlayLineResult(BaseModel):
+    segment_id: int
+    segment_index: int
+    score: float
+    word_error_rate: float
+    correct_answer: str
+    user_input: str
+    mistakes: List[MistakeDetail]
+    practice_record_id: int
+
+
+class RolePlayResult(BaseModel):
+    total_score: float
+    role: str
+    results: List[RolePlayLineResult]
