@@ -21,6 +21,14 @@ class AudioItemCreate(AudioItemBase):
     file_path: str
 
 
+class AudioItemUpdate(BaseModel):
+    title: Optional[str] = None
+    exam_type: Optional[str] = None
+    category: Optional[str] = None
+    topic: Optional[str] = None
+    difficulty: Optional[str] = None
+
+
 class AudioItemResponse(AudioItemBase):
     id: int
     filename: str

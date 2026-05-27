@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { listAudio, deleteAudio, scanAudio } from '../api/audioApi';
+import { listAudio, deleteAudio, scanAudio, updateAudio } from '../api/audioApi';
 import { getTranscriptsByAudio, createTranscript, updateTranscript, importPdfTranscript, importSrtTranscript, alignTimestamps } from '../api/transcriptApi';
 import { getQuestionsByAudio, createQuestion, deleteQuestion } from '../api/questionApi';
 import type { AudioItem, Transcript, Question } from '../types';
@@ -163,6 +163,12 @@ export default function LibraryPage() {
     }
   };
 
+  const handleUpdateExamType = async (item: AudioItem, newExamType: string) => {
+    if (newExamType === item.exam_type) return;
+    await updateAudio(item.id, { exam_type: newExamType });
+    await load();
+  };
+
   const handleDeleteQuestion = async (audioId: number, qid: number) => {
     await deleteQuestion(qid);
     setQuestions(prev => ({ ...prev, [audioId]: prev[audioId].filter(q => q.id !== qid) }));
@@ -174,6 +180,8 @@ export default function LibraryPage() {
   };
 
   const { groups, others } = groupEnglishpod(items);
+  const toeicItems = others.filter(i => i.exam_type === 'toeic');
+  const remainingOthers = others.filter(i => i.exam_type !== 'toeic');
 
   return (
     <div style={styles.page}>
@@ -246,23 +254,80 @@ export default function LibraryPage() {
         </div>
       )}
 
-      {/* Other audio files flat list */}
-      {others.length > 0 && (
+      {/* TOEIC section */}
+      {toeicItems.length > 0 && (
         <div style={styles.section}>
-          {groups.length > 0 && (
+          <div style={styles.sectionHeader}>
+            <span style={{ ...styles.sectionLabel, color: '#a6e3a1' }}>TOEIC</span>
+            <span style={styles.sectionCount}>{toeicItems.length} files</span>
+          </div>
+          <div style={styles.list}>
+            {toeicItems.map(item => {
+              const s = srtStatus[item.id];
+              const al = alignStatus[item.id];
+              const segCount = s?.count ?? (item.segment_count > 0 ? item.segment_count : null);
+              return (
+                <div key={item.id} style={styles.card}>
+                  <div style={styles.cardHeader}>
+                    <div style={styles.cardMain}>
+                      <select
+                        style={{ ...styles.examSelect, background: examBadgeColor['toeic'] }}
+                        value={item.exam_type ?? 'toeic'}
+                        onChange={e => handleUpdateExamType(item, e.target.value)}
+                      >
+                        {['ielts', 'toeic', 'custom', 'business', 'general'].map(t => (
+                          <option key={t} value={t}>{t.toUpperCase()}</option>
+                        ))}
+                      </select>
+                      <span style={styles.cardTitle}>{item.title || item.filename}</span>
+                    </div>
+                    <div style={styles.cardActions}>
+                      <button style={styles.actionBtn} onClick={() => navigate(`/practice/${item.id}`)}>Practice</button>
+                      {segCount != null ? (
+                        <>
+                          <span style={styles.importedBadge}>✓ SRT {segCount}</span>
+                          <button style={styles.alignBtn} disabled={al?.loading} onClick={() => handleAlign(item.id)}>
+                            {al?.loading ? 'Aligning…' : al?.updated != null ? `✓ Aligned ${al.updated}` : al?.error ? 'Retry Align' : 'Align Timestamps'}
+                          </button>
+                        </>
+                      ) : (
+                        <button style={styles.importBtn} disabled={s?.loading} onClick={() => handleImportSrt(item.id)}>
+                          {s?.loading ? '…' : s?.error ? 'Retry' : 'Import SRT'}
+                        </button>
+                      )}
+                      <button style={{ ...styles.actionBtn, color: '#f38ba8' }} onClick={() => handleDelete(item.id)}>Delete</button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Other audio files flat list */}
+      {remainingOthers.length > 0 && (
+        <div style={styles.section}>
+          {(groups.length > 0 || toeicItems.length > 0) && (
             <div style={styles.sectionHeader}>
               <span style={styles.sectionLabel}>Other</span>
-              <span style={styles.sectionCount}>{others.length} files</span>
+              <span style={styles.sectionCount}>{remainingOthers.length} files</span>
             </div>
           )}
           <div style={styles.list}>
-            {others.map(item => (
+            {remainingOthers.map(item => (
               <div key={item.id} style={styles.card}>
                 <div style={styles.cardHeader}>
                   <div style={styles.cardMain}>
-                    <span style={{ ...styles.badge, background: examBadgeColor[item.exam_type] ?? '#45475a', color: '#1e1e2e' }}>
-                      {item.exam_type?.toUpperCase()}
-                    </span>
+                    <select
+                      style={{ ...styles.examSelect, background: examBadgeColor[item.exam_type] ?? '#45475a' }}
+                      value={item.exam_type ?? 'custom'}
+                      onChange={e => handleUpdateExamType(item, e.target.value)}
+                    >
+                      {['ielts', 'toeic', 'custom', 'business', 'general'].map(t => (
+                        <option key={t} value={t}>{t.toUpperCase()}</option>
+                      ))}
+                    </select>
                     <span style={styles.cardTitle}>{item.title || item.filename}</span>
                     {item.difficulty && <span style={styles.diffBadge}>{item.difficulty}</span>}
                     {item.topic && <span style={styles.topic}>{item.topic}</span>}
@@ -471,6 +536,10 @@ const styles: Record<string, React.CSSProperties> = {
   cardHeader: { display: 'flex', alignItems: 'center', padding: '12px 16px', gap: 12 },
   cardMain: { flex: 1, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
   badge: { borderRadius: 4, padding: '2px 8px', fontSize: 11, fontWeight: 700 },
+  examSelect: {
+    color: '#1e1e2e', border: 'none', borderRadius: 4,
+    padding: '2px 6px', fontSize: 11, fontWeight: 700, cursor: 'pointer',
+  },
   cardTitle: { color: '#cdd6f4', fontSize: 15, fontWeight: 600 },
   diffBadge: { background: '#45475a', color: '#a6adc8', borderRadius: 4, padding: '2px 6px', fontSize: 11 },
   topic: { color: '#6c7086', fontSize: 13 },

@@ -31,3 +31,11 @@ export const scanAudio = async (): Promise<AudioItem[]> => {
   const res = await client.post('/api/audio/scan');
   return res.data;
 };
+
+export const updateAudio = async (
+  id: number,
+  data: { title?: string; exam_type?: string; category?: string; topic?: string; difficulty?: string }
+): Promise<AudioItem> => {
+  const res = await client.patch(`/api/audio/${id}`, data);
+  return res.data;
+};

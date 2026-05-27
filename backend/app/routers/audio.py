@@ -8,7 +8,7 @@ from sqlalchemy import func
 from typing import List, Optional
 from ..database import get_db
 from ..models import AudioItem, TranscriptSegment
-from ..schemas import AudioItemResponse, PdfContentResponse
+from ..schemas import AudioItemResponse, AudioItemUpdate, PdfContentResponse
 from ..services.pdf_parser import find_pdf_for_audio, parse_pdf
 
 BASE_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -132,6 +132,18 @@ def get_pdf_content(audio_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"PDF parse error: {e}")
 
 
+def _infer_exam_type(rel_path: str) -> str:
+    parts = rel_path.lower().replace("\\", "/").split("/")
+    for part in parts:
+        if "toeic" in part:
+            return "toeic"
+        if "ielts" in part:
+            return "ielts"
+        if "business" in part:
+            return "business"
+    return "custom"
+
+
 @router.post("/scan", response_model=List[AudioItemResponse])
 def scan_folder(db: Session = Depends(get_db)):
     """Register any audio files in uploads/ (recursively) that aren't yet in the database."""
@@ -158,7 +170,7 @@ def scan_folder(db: Session = Depends(get_db)):
                 filename=fname,
                 file_path=relative_path,
                 title=base,
-                exam_type="custom",
+                exam_type=_infer_exam_type(rel),
             )
             db.add(item)
             added.append(item)
@@ -217,6 +229,18 @@ def get_clip(audio_id: int, segment_id: int, db: Session = Depends(get_db)):
             raise HTTPException(status_code=500, detail="ffmpeg timeout")
 
     return FileResponse(cache_file, media_type="audio/mpeg", headers={"Cache-Control": "no-store"})
+
+
+@router.patch("/{audio_id}", response_model=AudioItemResponse)
+def update_audio(audio_id: int, data: AudioItemUpdate, db: Session = Depends(get_db)):
+    item = db.query(AudioItem).filter(AudioItem.id == audio_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Audio not found")
+    for field, value in data.model_dump(exclude_unset=True).items():
+        setattr(item, field, value)
+    db.commit()
+    db.refresh(item)
+    return _with_segment_count([item], db)[0]
 
 
 @router.delete("/{audio_id}")
