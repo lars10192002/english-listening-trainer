@@ -43,7 +43,9 @@ function groupEnglishpod(items: AudioItem[]): { groups: EpisodeGroup[]; others: 
 export default function LibraryPage() {
   const navigate = useNavigate();
   const [items, setItems] = useState<AudioItem[]>([]);
-  const [filterExam, setFilterExam] = useState('');
+  const [activeTab, setActiveTab] = useState<'englishpod' | 'toeic' | 'other'>('englishpod');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [expanded, setExpanded] = useState<number | null>(null);
   const [transcripts, setTranscripts] = useState<Record<number, Transcript[]>>({});
   const [questions, setQuestions] = useState<Record<number, Question[]>>({});
@@ -57,11 +59,10 @@ export default function LibraryPage() {
   const [addingQuestion, setAddingQuestion] = useState<number | null>(null);
   const [newQuestion, setNewQuestion] = useState({ question_text: '', correct_answer: '', word_limit_type: 'none', explanation: '' });
 
-  useEffect(() => { load(); }, [filterExam]);
+  useEffect(() => { load(); }, []);
 
   const load = async () => {
-    const params = filterExam ? { exam_type: filterExam } : undefined;
-    const data = await listAudio(params);
+    const data = await listAudio();
     setItems(data);
     const preloaded: Record<number, { loading: boolean; segmentCount?: number }> = {};
     for (const item of data) {
@@ -183,64 +184,137 @@ export default function LibraryPage() {
   const toeicItems = others.filter(i => i.exam_type === 'toeic');
   const remainingOthers = others.filter(i => i.exam_type !== 'toeic');
 
+  const q = searchQuery.toLowerCase().replace(/\s/g, '');
+  const filteredGroups = q
+    ? groups.filter(g => g.ep.includes(q) || parseInt(g.ep, 10).toString().includes(q))
+    : groups;
+  const filteredToeic = q
+    ? toeicItems.filter(i => (i.title ?? i.filename).toLowerCase().includes(q))
+    : toeicItems;
+  const filteredOthers = q
+    ? remainingOthers.filter(i => (i.title ?? i.filename).toLowerCase().includes(q))
+    : remainingOthers;
+
   return (
     <div style={styles.page}>
       <div style={styles.headerRow}>
         <h1 style={styles.h1}>Library</h1>
-        <select style={styles.select} value={filterExam} onChange={e => setFilterExam(e.target.value)}>
-          {EXAM_TYPES.map(t => <option key={t} value={t}>{t ? t.toUpperCase() : 'All Types'}</option>)}
-        </select>
         <button style={styles.scanBtn} onClick={handleScan} disabled={scanning}>
           {scanning ? 'Scanning…' : 'Scan Folder'}
         </button>
         {scanResult && <span style={styles.scanResult}>{scanResult}</span>}
       </div>
 
+      {/* Tab bar */}
+      <div style={styles.tabBar}>
+        {([
+          { key: 'englishpod', label: 'EnglishPod', count: groups.length },
+          { key: 'toeic',      label: 'TOEIC',      count: toeicItems.length },
+          { key: 'other',      label: 'Other',       count: remainingOthers.length },
+        ] as const).map(({ key, label, count }) => (
+          <button
+            key={key}
+            style={{ ...styles.tab, ...(activeTab === key ? styles.tabActive : {}) }}
+            onClick={() => { setActiveTab(key); setSearchQuery(''); }}
+          >
+            {label}
+            <span style={styles.tabCount}>{count}</span>
+          </button>
+        ))}
+        <div style={{ flex: 1 }} />
+        <input
+          style={styles.searchInput}
+          placeholder={activeTab === 'englishpod' ? 'Search episode…' : 'Search…'}
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+        />
+        {activeTab === 'englishpod' && (
+          <button
+            style={styles.viewToggle}
+            onClick={() => setViewMode(v => v === 'grid' ? 'list' : 'grid')}
+            title={viewMode === 'grid' ? 'Switch to list view' : 'Switch to grid view'}
+          >
+            {viewMode === 'grid' ? '☰' : '⊞'}
+          </button>
+        )}
+      </div>
+
       {items.length === 0 && (
         <div style={styles.empty}>No audio files yet. <a href="/import" style={{ color: '#89b4fa' }}>Import one.</a></div>
       )}
 
-      {/* EnglishPod grouped section */}
-      {groups.length > 0 && (
+      {/* EnglishPod tab */}
+      {activeTab === 'englishpod' && (
         <div style={styles.section}>
-          <div style={styles.sectionHeader}>
-            <span style={styles.sectionLabel}>EnglishPod</span>
-            <span style={styles.sectionCount}>{groups.length} episodes</span>
-          </div>
-          <div style={styles.epGrid}>
-            {groups.map(({ ep, tracks }) => (
-              <div key={ep} style={styles.epCard}>
-                <div style={styles.epTitle}>Ep. {parseInt(ep, 10)}</div>
-                <div style={styles.trackList}>
+          {filteredGroups.length === 0 && <div style={styles.empty}>No episodes found.</div>}
+
+          {/* Grid mode */}
+          {viewMode === 'grid' && (
+            <div style={styles.epGrid}>
+              {filteredGroups.map(({ ep, tracks }) => (
+                <div key={ep} style={styles.epCard}>
+                  <div style={styles.epTitle}>Ep. {parseInt(ep, 10)}</div>
+                  <div style={styles.trackList}>
+                    {(['dg', 'pb', 'rv'] as const).map(t => {
+                      const item = tracks[t];
+                      const imp = item ? importStatus[item.id] : undefined;
+                      return (
+                        <div key={t} style={styles.trackRow}>
+                          <span style={{ ...styles.trackBadge, background: TRACK_COLOR[t], color: '#1e1e2e' }}>
+                            {TRACK_LABEL[t]}
+                          </span>
+                          {item ? (
+                            <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                              <button style={styles.practiceBtn} onClick={() => navigate(`/practice/${item.id}`)}>
+                                Practice
+                              </button>
+                              {t === 'dg' && (
+                                imp?.segmentCount != null ? (
+                                  <span style={styles.importedBadge}>✓ {imp.segmentCount} lines</span>
+                                ) : (
+                                  <button style={styles.importBtn} disabled={imp?.loading} onClick={() => handleImportPdf(item.id)}>
+                                    {imp?.loading ? '…' : imp?.error ? 'Retry' : 'Import PDF'}
+                                  </button>
+                                )
+                              )}
+                            </div>
+                          ) : (
+                            <span style={styles.missing}>—</span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* List mode */}
+          {viewMode === 'list' && (
+            <div style={styles.epListContainer}>
+              {filteredGroups.map(({ ep, tracks }) => (
+                <div key={ep} style={styles.epListRow}>
+                  <span style={styles.epListNum}>Ep. {parseInt(ep, 10)}</span>
                   {(['dg', 'pb', 'rv'] as const).map(t => {
                     const item = tracks[t];
                     const imp = item ? importStatus[item.id] : undefined;
                     return (
-                      <div key={t} style={styles.trackRow}>
-                        <span style={{ ...styles.trackBadge, background: TRACK_COLOR[t], color: '#1e1e2e' }}>
+                      <div key={t} style={styles.epListTrack}>
+                        <span style={{ ...styles.trackBadge, background: item ? TRACK_COLOR[t] : '#313244', color: item ? '#1e1e2e' : '#45475a' }}>
                           {TRACK_LABEL[t]}
                         </span>
                         {item ? (
-                          <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                            <button style={styles.practiceBtn} onClick={() => navigate(`/practice/${item.id}`)}>
-                              Practice
-                            </button>
+                          <>
+                            <button style={styles.practiceBtn} onClick={() => navigate(`/practice/${item.id}`)}>▶</button>
                             {t === 'dg' && (
-                              imp?.segmentCount != null ? (
-                                <span style={styles.importedBadge}>
-                                  ✓ {imp.segmentCount} lines
-                                </span>
-                              ) : (
-                                <button
-                                  style={styles.importBtn}
-                                  disabled={imp?.loading}
-                                  onClick={() => handleImportPdf(item.id)}
-                                >
-                                  {imp?.loading ? '…' : imp?.error ? 'Retry' : 'Import PDF'}
-                                </button>
-                              )
+                              imp?.segmentCount != null
+                                ? <span style={styles.importedBadge}>✓</span>
+                                : <button style={styles.importBtn} disabled={imp?.loading} onClick={() => handleImportPdf(item.id)}>
+                                    {imp?.loading ? '…' : 'PDF'}
+                                  </button>
                             )}
-                          </div>
+                          </>
                         ) : (
                           <span style={styles.missing}>—</span>
                         )}
@@ -248,21 +322,18 @@ export default function LibraryPage() {
                     );
                   })}
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
-      {/* TOEIC section */}
-      {toeicItems.length > 0 && (
+      {/* TOEIC tab */}
+      {activeTab === 'toeic' && (
         <div style={styles.section}>
-          <div style={styles.sectionHeader}>
-            <span style={{ ...styles.sectionLabel, color: '#a6e3a1' }}>TOEIC</span>
-            <span style={styles.sectionCount}>{toeicItems.length} files</span>
-          </div>
+          {filteredToeic.length === 0 && <div style={styles.empty}>No TOEIC files found.</div>}
           <div style={styles.list}>
-            {toeicItems.map(item => {
+            {filteredToeic.map(item => {
               const s = srtStatus[item.id];
               const al = alignStatus[item.id];
               const segCount = s?.count ?? (item.segment_count > 0 ? item.segment_count : null);
@@ -305,17 +376,12 @@ export default function LibraryPage() {
         </div>
       )}
 
-      {/* Other audio files flat list */}
-      {remainingOthers.length > 0 && (
+      {/* Other tab */}
+      {activeTab === 'other' && (
         <div style={styles.section}>
-          {(groups.length > 0 || toeicItems.length > 0) && (
-            <div style={styles.sectionHeader}>
-              <span style={styles.sectionLabel}>Other</span>
-              <span style={styles.sectionCount}>{remainingOthers.length} files</span>
-            </div>
-          )}
+          {filteredOthers.length === 0 && <div style={styles.empty}>No files found.</div>}
           <div style={styles.list}>
-            {remainingOthers.map(item => (
+            {filteredOthers.map(item => (
               <div key={item.id} style={styles.card}>
                 <div style={styles.cardHeader}>
                   <div style={styles.cardMain}>
@@ -464,12 +530,42 @@ function EditableTranscript({ transcript, onSave }: { transcript: Transcript; on
 
 const styles: Record<string, React.CSSProperties> = {
   page: { padding: 24, maxWidth: 1000, margin: '0 auto' },
-  headerRow: { display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20 },
+  headerRow: { display: 'flex', alignItems: 'center', gap: 16, marginBottom: 12 },
   h1: { color: '#cdd6f4', fontSize: 24, fontWeight: 700, flex: 1 },
   select: {
     background: '#1e1e2e', color: '#cdd6f4', border: '1px solid #45475a',
     borderRadius: 6, padding: '6px 10px', fontSize: 13,
   },
+  tabBar: {
+    display: 'flex', alignItems: 'center', gap: 4, marginBottom: 16,
+    borderBottom: '1px solid #313244', paddingBottom: 8,
+  },
+  tab: {
+    background: 'none', border: 'none', color: '#6c7086',
+    padding: '6px 14px', cursor: 'pointer', fontSize: 13, borderRadius: 6,
+    display: 'flex', alignItems: 'center', gap: 6,
+  },
+  tabActive: { background: '#313244', color: '#cdd6f4', fontWeight: 700 },
+  tabCount: {
+    background: '#45475a', color: '#a6adc8', borderRadius: 10,
+    padding: '1px 7px', fontSize: 11,
+  },
+  searchInput: {
+    background: '#1e1e2e', color: '#cdd6f4', border: '1px solid #45475a',
+    borderRadius: 6, padding: '5px 10px', fontSize: 13, width: 180,
+  },
+  viewToggle: {
+    background: '#313244', color: '#cdd6f4', border: '1px solid #45475a',
+    borderRadius: 6, padding: '5px 10px', cursor: 'pointer', fontSize: 16,
+  },
+  epListContainer: { display: 'flex', flexDirection: 'column', gap: 2 },
+  epListRow: {
+    display: 'flex', alignItems: 'center', gap: 12,
+    padding: '5px 10px', borderRadius: 6,
+    background: '#1e1e2e', border: '1px solid #313244',
+  },
+  epListNum: { color: '#a6adc8', fontSize: 13, minWidth: 52, fontVariantNumeric: 'tabular-nums' },
+  epListTrack: { display: 'flex', alignItems: 'center', gap: 4, flex: 1 },
   empty: { color: '#6c7086', padding: 20 },
   scanBtn: {
     background: '#313244', color: '#cdd6f4', border: '1px solid #45475a',
