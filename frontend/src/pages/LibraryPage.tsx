@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { listAudio, deleteAudio, scanAudio } from '../api/audioApi';
-import { getTranscriptsByAudio, createTranscript, updateTranscript, importPdfTranscript } from '../api/transcriptApi';
+import { getTranscriptsByAudio, createTranscript, updateTranscript, importPdfTranscript, importSrtTranscript, alignTimestamps } from '../api/transcriptApi';
 import { getQuestionsByAudio, createQuestion, deleteQuestion } from '../api/questionApi';
 import type { AudioItem, Transcript, Question } from '../types';
 
 const EXAM_TYPES = ['', 'ielts', 'toeic', 'custom', 'business', 'general'];
 
 // englishpod_B0001dg.mp3 → episode "0001", track "dg"
-const EP_PATTERN = /^englishpod_[A-Z](\d+)(dg|pb|rv)\.mp3$/i;
+const EP_PATTERN = /^englishpod_[A-Z]?(\d+)(dg|pb|rv)\.mp3$/i;
 const TRACK_LABEL: Record<string, string> = { dg: 'Dialogue', pb: 'Phrasebook', rv: 'Review' };
 const TRACK_COLOR: Record<string, string> = { dg: '#89b4fa', pb: '#a6e3a1', rv: '#cba6f7' };
 
@@ -49,6 +49,8 @@ export default function LibraryPage() {
   const [questions, setQuestions] = useState<Record<number, Question[]>>({});
   const [scanning, setScanning] = useState(false);
   const [scanResult, setScanResult] = useState<string | null>(null);
+  const [srtStatus, setSrtStatus] = useState<Record<number, { loading: boolean; count?: number; error?: string }>>({});
+  const [alignStatus, setAlignStatus] = useState<Record<number, { loading: boolean; updated?: number; error?: string }>>({});
   const [importStatus, setImportStatus] = useState<Record<number, { loading: boolean; segmentCount?: number; speakers?: string[]; error?: string }>>({});
   const [newTranscript, setNewTranscript] = useState('');
   const [addingTranscript, setAddingTranscript] = useState<number | null>(null);
@@ -137,6 +139,27 @@ export default function LibraryPage() {
       }));
     } catch {
       setImportStatus(prev => ({ ...prev, [audioId]: { loading: false, error: 'Import failed' } }));
+    }
+  };
+
+  const handleImportSrt = async (audioId: number) => {
+    setSrtStatus(prev => ({ ...prev, [audioId]: { loading: true } }));
+    try {
+      const result = await importSrtTranscript(audioId);
+      setSrtStatus(prev => ({ ...prev, [audioId]: { loading: false, count: result.segment_count } }));
+      await load();
+    } catch {
+      setSrtStatus(prev => ({ ...prev, [audioId]: { loading: false, error: 'No SRT found or parse failed' } }));
+    }
+  };
+
+  const handleAlign = async (audioId: number) => {
+    setAlignStatus(prev => ({ ...prev, [audioId]: { loading: true } }));
+    try {
+      const result = await alignTimestamps(audioId);
+      setAlignStatus(prev => ({ ...prev, [audioId]: { loading: false, updated: result.updated } }));
+    } catch {
+      setAlignStatus(prev => ({ ...prev, [audioId]: { loading: false, error: 'Align failed' } }));
     }
   };
 
@@ -255,7 +278,27 @@ export default function LibraryPage() {
 
                 {expanded === item.id && (
                   <div style={styles.expanded}>
-                    <div style={styles.sectionTitle}>Transcripts</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                      <div style={{ ...styles.sectionTitle, marginBottom: 0 }}>Transcripts</div>
+                      {(() => {
+                        const s = srtStatus[item.id];
+                        const al = alignStatus[item.id];
+                        const segCount = s?.count ?? (item.segment_count > 0 ? item.segment_count : null);
+                        if (segCount != null) return (
+                          <>
+                            <span style={styles.importedBadge}>✓ SRT {segCount} sentences</span>
+                            <button style={styles.alignBtn} disabled={al?.loading} onClick={() => handleAlign(item.id)}>
+                              {al?.loading ? 'Aligning…' : al?.updated != null ? `✓ Aligned ${al.updated}` : al?.error ? 'Retry Align' : 'Align Timestamps'}
+                            </button>
+                          </>
+                        );
+                        return (
+                          <button style={styles.importBtn} disabled={s?.loading} onClick={() => handleImportSrt(item.id)}>
+                            {s?.loading ? '…' : s?.error ? s.error : 'Import SRT'}
+                          </button>
+                        );
+                      })()}
+                    </div>
                     {(transcripts[item.id] ?? []).map(t => (
                       <EditableTranscript
                         key={t.id}
@@ -417,6 +460,10 @@ const styles: Record<string, React.CSSProperties> = {
   },
   importedBadge: {
     color: '#a6e3a1', fontSize: 11, fontWeight: 600,
+  },
+  alignBtn: {
+    background: 'transparent', color: '#89b4fa', border: '1px solid #45475a',
+    borderRadius: 4, padding: '2px 8px', cursor: 'pointer', fontSize: 11,
   },
   // Flat list (others)
   list: { display: 'flex', flexDirection: 'column', gap: 12 },

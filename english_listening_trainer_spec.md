@@ -1795,3 +1795,159 @@ english-listening-trainer
 3. 把 TOEIC / IELTS / 一般英文素材統一管理
 4. 用錯題複習提升精準聽力
 5. 未來可加入 AI 講解與自動出題
+
+---
+
+## 21. 已實作功能狀態（截至 2026-05）
+
+### 21.1 已完成
+
+| 功能 | 說明 |
+|------|------|
+| Mac 一鍵啟動 | `start.command` — 用 osascript 開兩個 Terminal 視窗分別跑 backend / frontend |
+| Scan Folder | 掃描 `uploads/` 全目錄，自動新增 MP3 到 DB |
+| EnglishPod PDF Import | 解析同資料夾 PDF，提取對話 segments，存入 `transcript_segments` |
+| Role Play Mode | 選角色 → 填台詞 → 逐行評分 → 可單行重試 |
+| TOEIC Part 1 SRT Import | 解析 `uploads/textfile/{stem}.srt`，提取 Part 1 A/B/C/D 句子，存入 segments（含時間戳記）|
+| Sentence Dictation Mode | TOEIC Part 1 每選項獨立聽寫，按題組 (Q1~Q6) 分組顯示 |
+| segment_count 持久化 | AudioItemResponse 透過 GROUP BY 計算 segment_count，Library 頁重整後仍顯示 ✓ N lines |
+| Import PDF 狀態顯示 | Library 展開後顯示目前 segment 數量，已匯入顯示 ✓，未匯入顯示 Import PDF 按鈕 |
+| Import SRT 狀態顯示 | 同上，TOEIC SRT 匯入後顯示 ✓ N lines |
+
+### 21.2 未完成
+
+| 功能 | 狀態 | 備註 |
+|------|------|------|
+| Sentence Dictation 音檔播放（B/C/D）| ❌ 有 bug | 見 §22 |
+| SettingsPage | 未開始 | 設定頁面 |
+| MultipleChoicePractice UI | 未開始 | 後端 API 已有，前端元件尚未做 |
+| DashboardPage 統計 | 基本已有 | 可再擴充 |
+| ReviewPage | 已有基本頁面 | 可再強化篩選與重做功能 |
+
+---
+
+## 22. TOEIC Part 1 SRT Import 設計
+
+### 22.1 SRT 檔案位置
+
+```txt
+uploads/
+  textfile/
+    {audio_stem}.srt    ← 例如 Test01 (YBM 2022).srt
+```
+
+`find_srt_for_audio()` 依音檔 basename（去副檔名）比對 `uploads/textfile/` 目錄。
+
+### 22.2 SRT 解析邏輯
+
+由 `backend/app/services/srt_parser_toeic.py` 處理：
+
+1. `parse_srt(content)` — 把 SRT 內容切成 entries：`{ start, end, text }`
+2. `extract_part1_sentences(entries)` — 找到 "Part 1 will begin" 與 "Part 2...direction" 之間的 entries，擷取符合 `^([A-D])\.\s+(.+)$` 的行，記錄 `start/end` 時間戳記
+
+每個 Part 1 segment 存入 `transcript_segments`：
+
+```txt
+speaker: "A" / "B" / "C" / "D"
+start_time_seconds: 來自 SRT 時間戳記（秒數）
+end_time_seconds: 來自 SRT 時間戳記（秒數）
+text: 選項句子內容
+```
+
+### 22.3 Import SRT API
+
+```http
+POST /api/transcripts/import-srt/{audio_id}
+```
+
+- 自動尋找對應 SRT
+- 清除既有 transcript（同一音檔只保留最新一份）
+- 回傳 `TranscriptImportResponse`（含 segments 清單）
+
+### 22.4 PracticePage 路由邏輯
+
+```txt
+hasSegments && !hasTimedSegments  →  顯示 Role Play 按鈕
+hasTimedSegments                  →  顯示 Sentence Dictation 按鈕
+```
+
+`hasTimedSegments = segments.some(s => s.start_time_seconds != null)`
+
+---
+
+## 23. Sentence Dictation Mode 設計
+
+### 23.1 UI 結構
+
+```txt
+Speed: [0.75x] [1.0x] [1.25x]
+
+Q1
+  A  [▶]  [___________________________]  [Check]
+  B  [▶]  [___________________________]  [Check]
+  C  [▶]  [___________________________]  [Check]
+  D  [▶]  [___________________________]  [Check]
+
+Q2
+  ...
+```
+
+每題 4 個選項（groupByQuestion，每 4 個 segment = 1 題）。
+
+### 23.2 元件：SentenceDictationPractice.tsx
+
+- 共用一個 `<audio>` element，透過 seek 控制播放位置
+- `activeSegRef`：目前正在播的 segment
+- `handleTimeUpdate`：用 `el.seeking` 防止 seek 過程中誤判結束
+- `playSentence(seg)`：
+  - `el.pause()`
+  - `el.currentTime = seg.start_time_seconds`
+  - `el.play()` — 直接在 click handler 內呼叫（保持 user gesture context）
+- 每個選項有獨立 input / result state，Check 後顯示分數與正確答案
+
+### 23.3 已知問題：B/C/D 不播放
+
+- **症狀**：每題只有 A 選項能播到正確音檔，B/C/D 播不出來
+- **排查確認**：
+  - DB 時間戳記正確（A: 101.76, B: 104.56, C: 106.519, D: 112.64）
+  - 瀏覽器 console 確認 `seeked` 事件有觸發，`currentTime` 正確
+  - 後端 check API 邏輯正確（`segment_id` → `seg.text` as `correct_answer`）
+  - 音檔為 CBR 128kbps，`accept-ranges: bytes` 支援 range request
+- **目前狀態**：`el.play()` 直接在 click handler 內呼叫（已排除 autoplay policy 問題），但問題仍在排查中
+
+### 23.4 計畫中的解決方案：預先切片
+
+改成把每個 segment 切成獨立小 MP3 clip，直接播放，不需要 seek。
+
+**後端：`POST /api/transcripts/audio/{audio_id}/extract-clips`**
+
+- 用 `ffmpeg` 依 `start_time_seconds` / `end_time_seconds` 切片
+- 儲存到 `uploads/clips/{audio_id}/seg_{segment_id}.mp3`
+- 在 `TranscriptSegment` response 新增 `clip_path` 欄位
+
+**前端：SentenceDictationPractice**
+
+- 每個 segment row 用獨立 `<audio src={clipPath}>` 或 `new Audio()`
+- 直接 `play()` 從頭播，不需要 seek
+- 不需要共享 audio element，無 seek 問題
+
+**DB 欄位（新增）**：
+
+```sql
+ALTER TABLE transcript_segments ADD COLUMN clip_path TEXT;
+```
+
+**目錄結構**：
+
+```txt
+uploads/
+  clips/
+    1004/
+      seg_457.mp3   ← Q1-A
+      seg_458.mp3   ← Q1-B
+      seg_459.mp3   ← Q1-C
+      seg_460.mp3   ← Q1-D
+      ...
+```
+
+**clip 大小估算**：每個 clip 約 2-4 秒 × 128kbps = ~32-64KB；24 個 clip ≈ 1MB 以內。

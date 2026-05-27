@@ -52,6 +52,8 @@ class TranscriptSegment(Base):
     speaker = Column(Text)
     start_time_seconds = Column(Float)
     end_time_seconds = Column(Float)
+    original_start_time_seconds = Column(Float)
+    original_end_time_seconds = Column(Float)
     text = Column(Text, nullable=False)
     created_at = Column(DateTime, server_default=func.now())
 

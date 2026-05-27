@@ -29,7 +29,17 @@ export const importPdfTranscript = async (audioId: number): Promise<TranscriptIm
   return res.data;
 };
 
+export const importSrtTranscript = async (audioId: number): Promise<TranscriptImportResult> => {
+  const res = await client.post(`/api/transcripts/import-srt/${audioId}`);
+  return res.data;
+};
+
 export const getSegmentsByAudio = async (audioId: number): Promise<TranscriptSegment[]> => {
   const res = await client.get(`/api/transcripts/audio/${audioId}/segments`);
+  return res.data;
+};
+
+export const alignTimestamps = async (audioId: number): Promise<{ updated: number; total: number }> => {
+  const res = await client.post(`/api/transcripts/align/${audioId}`, {}, { timeout: 600000 });
   return res.data;
 };

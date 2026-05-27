@@ -1,6 +1,8 @@
 import os
 import shutil
+import subprocess
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import List, Optional
@@ -138,7 +140,8 @@ def scan_folder(db: Session = Depends(get_db)):
 
     existing_paths = {row.file_path for row in db.query(AudioItem.file_path).all()}
     added = []
-    for dirpath, _dirnames, filenames in os.walk(uploads_root):
+    for dirpath, dirnames, filenames in os.walk(uploads_root):
+        dirnames[:] = [d for d in dirnames if d != 'cache']
         for fname in filenames:
             if fname.startswith("."):
                 continue
@@ -163,6 +166,57 @@ def scan_folder(db: Session = Depends(get_db)):
     for item in added:
         db.refresh(item)
     return _with_segment_count(added, db)
+
+
+CLIP_CACHE_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", "uploads", "cache", "clips"))
+
+
+@router.get("/{audio_id}/clip/{segment_id}")
+def get_clip(audio_id: int, segment_id: int, db: Session = Depends(get_db)):
+    audio = db.query(AudioItem).filter(AudioItem.id == audio_id).first()
+    if not audio:
+        raise HTTPException(status_code=404, detail="Audio not found")
+
+    seg = db.query(TranscriptSegment).filter(
+        TranscriptSegment.id == segment_id,
+        TranscriptSegment.audio_id == audio_id,
+    ).first()
+    if not seg:
+        raise HTTPException(status_code=404, detail="Segment not found")
+    if seg.start_time_seconds is None or seg.end_time_seconds is None:
+        raise HTTPException(status_code=422, detail="Segment has no timestamps")
+
+    os.makedirs(CLIP_CACHE_DIR, exist_ok=True)
+
+    start_ms = int(seg.start_time_seconds * 1000)
+    end_ms = int(seg.end_time_seconds * 1000)
+    cache_file = os.path.join(CLIP_CACHE_DIR, f"seg_{audio_id}_{segment_id}_{start_ms}_{end_ms}.mp3")
+
+    if not os.path.exists(cache_file):
+        audio_path = os.path.normpath(os.path.join(BASE_DIR, audio.file_path.lstrip("/")))
+        if not os.path.exists(audio_path):
+            raise HTTPException(status_code=404, detail="Audio file not found on disk")
+
+        start = seg.start_time_seconds
+        duration = seg.end_time_seconds - start + 0.50
+
+        cmd = [
+            "ffmpeg", "-y",
+            "-ss", str(start),
+            "-i", audio_path,
+            "-t", str(duration),
+            "-c:a", "copy",
+            "-vn",
+            cache_file,
+        ]
+        try:
+            result = subprocess.run(cmd, capture_output=True, timeout=30)
+            if result.returncode != 0 or not os.path.exists(cache_file):
+                raise HTTPException(status_code=500, detail="ffmpeg clip failed")
+        except subprocess.TimeoutExpired:
+            raise HTTPException(status_code=500, detail="ffmpeg timeout")
+
+    return FileResponse(cache_file, media_type="audio/mpeg", headers={"Cache-Control": "no-store"})
 
 
 @router.delete("/{audio_id}")

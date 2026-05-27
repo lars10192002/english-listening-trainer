@@ -8,8 +8,9 @@ import AudioPlayer from '../components/AudioPlayer';
 import DictationPractice from '../components/DictationPractice';
 import FillBlankPractice from '../components/FillBlankPractice';
 import RolePlayPractice from '../components/RolePlayPractice';
+import SentenceDictationPractice from '../components/SentenceDictationPractice';
 
-type Mode = 'dictation' | 'fill_blank' | 'role_play';
+type Mode = 'dictation' | 'fill_blank' | 'role_play' | 'sentence_dictation';
 
 export default function PracticePage() {
   const { audioId } = useParams<{ audioId: string }>();
@@ -50,6 +51,7 @@ export default function PracticePage() {
   const epTrack = audio.filename.match(/^englishpod_[A-Z]\d+(pb|rv)\.mp3$/i)?.[1];
   const showPdf = pdfContent && !epTrack;
   const hasSegments = segments.length > 0;
+  const hasTimedSegments = segments.some(s => s.start_time_seconds != null);
 
   const allVocab: VocabItem[] = showPdf
     ? [...pdfContent.key_vocabulary, ...pdfContent.supplementary_vocabulary]
@@ -68,8 +70,11 @@ export default function PracticePage() {
             onClick={() => setMode('fill_blank')}
             color="#a6e3a1"
           />
-          {hasSegments && (
+          {hasSegments && !hasTimedSegments && (
             <ModeBtn label="Role Play" active={mode === 'role_play'} onClick={() => setMode('role_play')} color="#cba6f7" />
+          )}
+          {hasTimedSegments && (
+            <ModeBtn label="Sentence Dictation" active={mode === 'sentence_dictation'} onClick={() => setMode('sentence_dictation')} color="#f9e2af" />
           )}
         </div>
       </div>
@@ -86,6 +91,7 @@ export default function PracticePage() {
         {mode === 'dictation' && <DictationPractice audio={audio} hidePlayer />}
         {mode === 'fill_blank' && <FillBlankPractice audio={audio} questions={questions} hidePlayer />}
         {mode === 'role_play' && <RolePlayPractice audio={audio} segments={segments} />}
+        {mode === 'sentence_dictation' && <SentenceDictationPractice audio={audio} segments={segments} />}
       </section>
 
       {/* 3. Dialogue block */}
