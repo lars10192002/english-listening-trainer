@@ -9,8 +9,9 @@ import DictationPractice from '../components/DictationPractice';
 import FillBlankPractice from '../components/FillBlankPractice';
 import RolePlayPractice from '../components/RolePlayPractice';
 import SentenceDictationPractice from '../components/SentenceDictationPractice';
+import MultipleChoicePractice from '../components/MultipleChoicePractice';
 
-type Mode = 'dictation' | 'fill_blank' | 'role_play' | 'sentence_dictation';
+type Mode = 'dictation' | 'fill_blank' | 'role_play' | 'sentence_dictation' | 'multiple_choice';
 
 export default function PracticePage() {
   const { audioId } = useParams<{ audioId: string }>();
@@ -46,6 +47,7 @@ export default function PracticePage() {
   );
 
   const hasFillBlanks = questions.some(q => q.question_type === 'fill_blank');
+  const hasMCQ = questions.some(q => q.question_type === 'multiple_choice' && q.options.length > 0);
   const audioSrc = `http://localhost:8000${audio.file_path}`;
 
   const epTrack = audio.filename.match(/^englishpod_[A-Z]\d+(pb|rv)\.mp3$/i)?.[1];
@@ -76,6 +78,10 @@ export default function PracticePage() {
           {hasTimedSegments && (
             <ModeBtn label="Sentence Dictation" active={mode === 'sentence_dictation'} onClick={() => setMode('sentence_dictation')} color="#f9e2af" />
           )}
+          {/* Multiple Choice: hidden until AI generation is implemented */}
+          {false && hasMCQ && (
+            <ModeBtn label="Multiple Choice" active={mode === 'multiple_choice'} onClick={() => setMode('multiple_choice')} color="#fab387" />
+          )}
         </div>
       </div>
 
@@ -92,6 +98,7 @@ export default function PracticePage() {
         {mode === 'fill_blank' && <FillBlankPractice audio={audio} questions={questions} hidePlayer />}
         {mode === 'role_play' && <RolePlayPractice audio={audio} segments={segments} />}
         {mode === 'sentence_dictation' && <SentenceDictationPractice audio={audio} segments={segments} />}
+        {mode === 'multiple_choice' && <MultipleChoicePractice audio={audio} questions={questions.filter(q => q.question_type === 'multiple_choice' && q.options.length > 0)} />}
       </section>
 
       {/* 3. Dialogue block */}
