@@ -4,7 +4,7 @@ import glob
 import difflib
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from ..database import get_db
 from ..models import Transcript, TranscriptSegment, AudioItem
 from ..schemas import (
@@ -246,6 +246,228 @@ def _find_best_match(query: str, words: list):
                 best_start = window[0].start
                 best_end = window[-1].end
     return best_start, best_end, best_score
+
+
+def _is_option_label(word_str: str) -> Optional[str]:
+    """Return 'A'/'B'/'C'/'D' if the word is an option label (uppercase + period), else None."""
+    w = word_str.strip()
+    if w in ('A.', 'B.', 'C.', 'D.'):
+        return w[0]
+    return None
+
+
+def _parse_toeic_from_words(words: list, max_questions: int = 6) -> list:
+    """Extract A/B/C/D sentences from Whisper word-level output.
+
+    Only matches uppercase labels with period (A./B./C./D.).
+    Enforces A→B→C→D order; incomplete groups are discarded.
+    Stops after max_questions complete groups.
+    """
+    SEQUENCE = ['A', 'B', 'C', 'D']
+    sentences = []
+    seg_index = 0
+    question_count = 0
+    i = 0
+
+    while i < len(words):
+        label = _is_option_label(words[i].word)
+        if label is None:
+            i += 1
+            continue
+
+        # Only accept 'A' to start a new question group
+        if label != 'A':
+            i += 1
+            continue
+
+        # We found 'A.' — now collect A, B, C, D in sequence
+        group = []
+        j = i
+        for expected in SEQUENCE:
+            if j >= len(words):
+                break
+            # Advance to next option label
+            while j < len(words):
+                lbl = _is_option_label(words[j].word)
+                if lbl is not None:
+                    break
+                j += 1
+            if j >= len(words):
+                break
+            lbl = _is_option_label(words[j].word)
+            if lbl != expected:
+                break  # order broken, discard this group
+
+            # Collect sentence words: stop at next label OR first sentence-ending period
+            start_idx = j + 1
+            end_idx = start_idx
+            while end_idx < len(words):
+                if _is_option_label(words[end_idx].word) is not None:
+                    break
+                w_stripped = words[end_idx].word.strip()
+                end_idx += 1
+                if w_stripped.endswith('.') or w_stripped.endswith('!') or w_stripped.endswith('?'):
+                    break
+
+            if start_idx < end_idx:
+                sw = words[start_idx:end_idx]
+                text = re.sub(r'\s+', ' ', ' '.join(w.word for w in sw)).strip()
+                text = re.sub(r'[^\w\s\'\-,.]', '', text).strip()
+                group.append({
+                    'option': expected,
+                    'text': text,
+                    'start': sw[0].start,
+                    'end': sw[-1].end,
+                    'segment_index': seg_index,
+                })
+                seg_index += 1
+            j = end_idx
+
+        if len(group) == 4:
+            sentences.extend(group)
+            question_count += 1
+            i = j
+            if question_count >= max_questions:
+                break
+        else:
+            i += 1  # skip this 'A.' and try again
+
+    return sentences
+
+
+@router.post("/transcribe-toeic/{audio_id}", response_model=TranscriptImportResponse)
+def transcribe_toeic(audio_id: int, max_questions: int = 6, db: Session = Depends(get_db)):
+    """Transcribe a TOEIC Part 1 audio with Whisper, parse A/B/C/D sentences directly."""
+    audio = db.query(AudioItem).filter(AudioItem.id == audio_id).first()
+    if not audio:
+        raise HTTPException(status_code=404, detail="Audio not found")
+
+    audio_path = os.path.normpath(os.path.join(BASE_DIR, audio.file_path.lstrip("/")))
+    if not os.path.exists(audio_path):
+        raise HTTPException(status_code=404, detail="Audio file not found on disk")
+
+    try:
+        from faster_whisper import WhisperModel
+        model = WhisperModel("base", device="cpu", compute_type="int8")
+        whisper_segments, _ = model.transcribe(audio_path, word_timestamps=True, language="en")
+        words = [w for seg in whisper_segments for w in (seg.words or [])]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Whisper error: {e}")
+
+    sentences = _parse_toeic_from_words(words, max_questions=max_questions)
+    if not sentences:
+        raise HTTPException(status_code=422, detail="No A/B/C/D sentences found in audio")
+
+    existing = db.query(Transcript).filter(Transcript.audio_id == audio_id).first()
+    if existing:
+        db.delete(existing)
+        db.flush()
+
+    full_text = '\n'.join(f"{s['option']}. {s['text']}" for s in sentences)
+    transcript = Transcript(audio_id=audio_id, content=full_text, format='toeic_part1', language='en')
+    db.add(transcript)
+    db.flush()
+
+    db_segments = []
+    for s in sentences:
+        seg = TranscriptSegment(
+            transcript_id=transcript.id,
+            audio_id=audio_id,
+            segment_index=s['segment_index'],
+            speaker=s['option'],
+            start_time_seconds=s['start'],
+            end_time_seconds=s['end'],
+            text=s['text'],
+        )
+        db.add(seg)
+        db_segments.append(seg)
+
+    db.commit()
+    db.refresh(transcript)
+    for seg in db_segments:
+        db.refresh(seg)
+
+    return TranscriptImportResponse(
+        transcript_id=transcript.id,
+        audio_id=audio_id,
+        segment_count=len(db_segments),
+        speakers=['A', 'B', 'C', 'D'],
+        segments=[TranscriptSegmentResponse.model_validate(s) for s in db_segments],
+    )
+
+
+@router.post("/import-srt-aligned/{audio_id}", response_model=TranscriptImportResponse)
+def import_srt_aligned(audio_id: int, db: Session = Depends(get_db)):
+    """Parse SRT for text, run Whisper for accurate timestamps, store in one step."""
+    audio = db.query(AudioItem).filter(AudioItem.id == audio_id).first()
+    if not audio:
+        raise HTTPException(status_code=404, detail="Audio not found")
+
+    srt_path = find_srt_for_audio(audio.file_path, BASE_DIR)
+    if not srt_path:
+        raise HTTPException(status_code=404, detail="No SRT file found for this audio")
+
+    with open(srt_path, encoding='utf-8') as f:
+        content = f.read()
+
+    entries = parse_srt(content)
+    sentences = extract_part1_sentences(entries)
+    if not sentences:
+        raise HTTPException(status_code=422, detail="No Part 1 sentences found in SRT")
+
+    audio_path = os.path.normpath(os.path.join(BASE_DIR, audio.file_path.lstrip("/")))
+    if not os.path.exists(audio_path):
+        raise HTTPException(status_code=404, detail="Audio file not found on disk")
+
+    try:
+        from faster_whisper import WhisperModel
+        model = WhisperModel("base", device="cpu", compute_type="int8")
+        whisper_segments, _ = model.transcribe(audio_path, word_timestamps=True, language="en")
+        words = [w for seg in whisper_segments for w in (seg.words or [])]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Whisper error: {e}")
+
+    existing = db.query(Transcript).filter(Transcript.audio_id == audio_id).first()
+    if existing:
+        db.delete(existing)
+        db.flush()
+
+    full_text = '\n'.join(f"{s['option']}. {s['text']}" for s in sentences)
+    transcript = Transcript(audio_id=audio_id, content=full_text, format='toeic_part1', language='en')
+    db.add(transcript)
+    db.flush()
+
+    db_segments = []
+    for s in sentences:
+        new_start, new_end, score = _find_best_match(s['text'], words)
+        start = new_start if new_start is not None and score >= 0.5 else s['start']
+        end = new_end if new_end is not None and score >= 0.5 else s['end']
+        seg = TranscriptSegment(
+            transcript_id=transcript.id,
+            audio_id=audio_id,
+            segment_index=s['segment_index'],
+            speaker=s['option'],
+            start_time_seconds=start,
+            end_time_seconds=end,
+            original_start_time_seconds=s['start'],
+            original_end_time_seconds=s['end'],
+            text=s['text'],
+        )
+        db.add(seg)
+        db_segments.append(seg)
+
+    db.commit()
+    db.refresh(transcript)
+    for seg in db_segments:
+        db.refresh(seg)
+
+    return TranscriptImportResponse(
+        transcript_id=transcript.id,
+        audio_id=audio_id,
+        segment_count=len(db_segments),
+        speakers=['A', 'B', 'C', 'D'],
+        segments=[TranscriptSegmentResponse.model_validate(s) for s in db_segments],
+    )
 
 
 @router.post("/align/{audio_id}")

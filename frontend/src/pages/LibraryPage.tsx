@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { listAudio, deleteAudio, scanAudio, updateAudio } from '../api/audioApi';
-import { getTranscriptsByAudio, createTranscript, updateTranscript, importPdfTranscript, importSrtTranscript, alignTimestamps } from '../api/transcriptApi';
+import { getTranscriptsByAudio, createTranscript, updateTranscript, importPdfTranscript, importSrtTranscript, alignTimestamps, importSrtAligned, transcribeToeic } from '../api/transcriptApi';
 import { getQuestionsByAudio, createQuestion, deleteQuestion } from '../api/questionApi';
 import type { AudioItem, Transcript, Question } from '../types';
 
@@ -151,6 +151,28 @@ export default function LibraryPage() {
       await load();
     } catch {
       setSrtStatus(prev => ({ ...prev, [audioId]: { loading: false, error: 'No SRT found or parse failed' } }));
+    }
+  };
+
+  const handleImportSrtAligned = async (audioId: number) => {
+    setSrtStatus(prev => ({ ...prev, [audioId]: { loading: true } }));
+    try {
+      const result = await importSrtAligned(audioId);
+      setSrtStatus(prev => ({ ...prev, [audioId]: { loading: false, count: result.segment_count } }));
+      await load();
+    } catch {
+      setSrtStatus(prev => ({ ...prev, [audioId]: { loading: false, error: 'Import failed' } }));
+    }
+  };
+
+  const handleTranscribeToeic = async (audioId: number) => {
+    setSrtStatus(prev => ({ ...prev, [audioId]: { loading: true } }));
+    try {
+      const result = await transcribeToeic(audioId);
+      setSrtStatus(prev => ({ ...prev, [audioId]: { loading: false, count: result.segment_count } }));
+      await load();
+    } catch {
+      setSrtStatus(prev => ({ ...prev, [audioId]: { loading: false, error: 'Transcribe failed' } }));
     }
   };
 
@@ -355,16 +377,16 @@ export default function LibraryPage() {
                     <div style={styles.cardActions}>
                       <button style={styles.actionBtn} onClick={() => navigate(`/practice/${item.id}`)}>Practice</button>
                       {segCount != null ? (
+                        <span style={styles.importedBadge}>✓ {segCount} sentences</span>
+                      ) : (
                         <>
-                          <span style={styles.importedBadge}>✓ SRT {segCount}</span>
-                          <button style={styles.alignBtn} disabled={al?.loading} onClick={() => handleAlign(item.id)}>
-                            {al?.loading ? 'Aligning…' : al?.updated != null ? `✓ Aligned ${al.updated}` : al?.error ? 'Retry Align' : 'Align Timestamps'}
+                          <button style={styles.importBtn} disabled={s?.loading} onClick={() => handleTranscribeToeic(item.id)}>
+                            {s?.loading ? 'Transcribing…' : s?.error === 'Transcribe failed' ? 'Retry' : 'Transcribe'}
+                          </button>
+                          <button style={{ ...styles.importBtn, background: '#313244' }} disabled={s?.loading} onClick={() => handleImportSrtAligned(item.id)}>
+                            {s?.loading ? '…' : s?.error === 'Import failed' ? 'Retry' : 'Import SRT'}
                           </button>
                         </>
-                      ) : (
-                        <button style={styles.importBtn} disabled={s?.loading} onClick={() => handleImportSrt(item.id)}>
-                          {s?.loading ? '…' : s?.error ? 'Retry' : 'Import SRT'}
-                        </button>
                       )}
                       <button style={{ ...styles.actionBtn, color: '#f38ba8' }} onClick={() => handleDelete(item.id)}>Delete</button>
                     </div>

@@ -43,3 +43,13 @@ export const alignTimestamps = async (audioId: number): Promise<{ updated: numbe
   const res = await client.post(`/api/transcripts/align/${audioId}`, {}, { timeout: 600000 });
   return res.data;
 };
+
+export const importSrtAligned = async (audioId: number): Promise<TranscriptImportResult> => {
+  const res = await client.post(`/api/transcripts/import-srt-aligned/${audioId}`, {}, { timeout: 600000 });
+  return res.data;
+};
+
+export const transcribeToeic = async (audioId: number): Promise<TranscriptImportResult> => {
+  const res = await client.post(`/api/transcripts/transcribe-toeic/${audioId}`, {}, { timeout: 600000 });
+  return res.data;
+};
