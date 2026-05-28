@@ -149,6 +149,7 @@ def scan_folder(db: Session = Depends(get_db)):
     """Register any audio files in uploads/ (recursively) that aren't yet in the database."""
     uploads_root = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", "uploads"))
     os.makedirs(uploads_root, exist_ok=True)
+    os.makedirs(os.path.join(uploads_root, "audio", "TOEIC"), exist_ok=True)
 
     existing_paths = {row.file_path for row in db.query(AudioItem.file_path).all()}
     added = []

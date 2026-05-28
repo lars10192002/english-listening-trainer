@@ -1,9 +1,9 @@
 #!/bin/bash
 DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# Backend window: install deps (skipped if already installed) then start server
+# Backend window: use venv Python (no --reload to ensure venv is used)
 osascript -e "tell application \"Terminal\"
-  do script \"echo '=== Backend ===' && cd '$DIR/backend' && pip install -r requirements.txt -q && python -m uvicorn app.main:app --reload --port 8000\"
+  do script \"echo '=== Backend ===' && cd '$DIR/backend' && venv/bin/python -m uvicorn app.main:app --port 8000\"
 end tell"
 
 # Frontend window: npm install if node_modules missing, then start dev server

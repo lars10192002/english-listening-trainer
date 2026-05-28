@@ -9,13 +9,19 @@ from .routers import audio, transcripts, questions, practice, review, stats
 
 models.Base.metadata.create_all(bind=engine)
 
-# Add speaker column if it doesn't exist (migration)
+# Migrations: add columns if they don't exist
+_migrations = [
+    "ALTER TABLE transcript_segments ADD COLUMN speaker TEXT",
+    "ALTER TABLE transcript_segments ADD COLUMN original_start_time_seconds REAL",
+    "ALTER TABLE transcript_segments ADD COLUMN original_end_time_seconds REAL",
+]
 with engine.connect() as _conn:
-    try:
-        _conn.execute(text("ALTER TABLE transcript_segments ADD COLUMN speaker TEXT"))
-        _conn.commit()
-    except Exception:
-        pass
+    for _sql in _migrations:
+        try:
+            _conn.execute(text(_sql))
+            _conn.commit()
+        except Exception:
+            pass
 
 app = FastAPI(title="English Listening Trainer API", version="1.0.0")
 
@@ -27,9 +33,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-UPLOADS_DIR = os.path.join(os.path.dirname(__file__), "..", "uploads")
-if os.path.exists(UPLOADS_DIR):
-    app.mount("/uploads", StaticFiles(directory=UPLOADS_DIR), name="uploads")
+UPLOADS_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "uploads"))
+os.makedirs(os.path.join(UPLOADS_DIR, "audio", "TOEIC"), exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=UPLOADS_DIR), name="uploads")
 
 app.include_router(audio.router)
 app.include_router(transcripts.router)

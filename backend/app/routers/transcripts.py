@@ -338,6 +338,9 @@ def _parse_toeic_from_words(words: list, max_questions: int = 6) -> list:
 @router.post("/transcribe-toeic/{audio_id}", response_model=TranscriptImportResponse)
 def transcribe_toeic(audio_id: int, max_questions: int = 6, db: Session = Depends(get_db)):
     """Transcribe a TOEIC Part 1 audio with Whisper, parse A/B/C/D sentences directly."""
+    import logging
+    logger = logging.getLogger("transcribe_toeic")
+
     audio = db.query(AudioItem).filter(AudioItem.id == audio_id).first()
     if not audio:
         raise HTTPException(status_code=404, detail="Audio not found")
@@ -351,41 +354,49 @@ def transcribe_toeic(audio_id: int, max_questions: int = 6, db: Session = Depend
         model = WhisperModel("base", device="cpu", compute_type="int8")
         whisper_segments, _ = model.transcribe(audio_path, word_timestamps=True, language="en")
         words = [w for seg in whisper_segments for w in (seg.words or [])]
+        logger.info(f"Whisper done: {len(words)} words")
     except Exception as e:
+        logger.exception("Whisper error")
         raise HTTPException(status_code=500, detail=f"Whisper error: {e}")
 
     sentences = _parse_toeic_from_words(words, max_questions=max_questions)
     if not sentences:
         raise HTTPException(status_code=422, detail="No A/B/C/D sentences found in audio")
 
-    existing = db.query(Transcript).filter(Transcript.audio_id == audio_id).first()
-    if existing:
-        db.delete(existing)
+    try:
+        existing = db.query(Transcript).filter(Transcript.audio_id == audio_id).first()
+        if existing:
+            db.query(TranscriptSegment).filter(TranscriptSegment.transcript_id == existing.id).delete()
+            db.delete(existing)
+            db.flush()
+
+        full_text = '\n'.join(f"{s['option']}. {s['text']}" for s in sentences)
+        transcript = Transcript(audio_id=audio_id, content=full_text, format='toeic_part1', language='en')
+        db.add(transcript)
         db.flush()
 
-    full_text = '\n'.join(f"{s['option']}. {s['text']}" for s in sentences)
-    transcript = Transcript(audio_id=audio_id, content=full_text, format='toeic_part1', language='en')
-    db.add(transcript)
-    db.flush()
+        db_segments = []
+        for s in sentences:
+            seg = TranscriptSegment(
+                transcript_id=transcript.id,
+                audio_id=audio_id,
+                segment_index=s['segment_index'],
+                speaker=s['option'],
+                start_time_seconds=s['start'],
+                end_time_seconds=s['end'],
+                text=s['text'],
+            )
+            db.add(seg)
+            db_segments.append(seg)
 
-    db_segments = []
-    for s in sentences:
-        seg = TranscriptSegment(
-            transcript_id=transcript.id,
-            audio_id=audio_id,
-            segment_index=s['segment_index'],
-            speaker=s['option'],
-            start_time_seconds=s['start'],
-            end_time_seconds=s['end'],
-            text=s['text'],
-        )
-        db.add(seg)
-        db_segments.append(seg)
-
-    db.commit()
-    db.refresh(transcript)
-    for seg in db_segments:
-        db.refresh(seg)
+        db.commit()
+        db.refresh(transcript)
+        for seg in db_segments:
+            db.refresh(seg)
+    except Exception as e:
+        db.rollback()
+        logger.exception("DB error in transcribe_toeic")
+        raise HTTPException(status_code=500, detail=f"DB error: {e}")
 
     return TranscriptImportResponse(
         transcript_id=transcript.id,
